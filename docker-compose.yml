@@ -1,0 +1,7 @@
+services:
+  app:
+    build: .
+    image: detection_ortho:latest
+    # Sorties persistées côté hôte : passer --out /app/out/... aux scripts.
+    volumes:
+      - ./out:/app/out

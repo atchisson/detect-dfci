@@ -1233,6 +1233,119 @@ git commit -m "feat: export GeoJSON et script baseline+comparaison (Jalon 1)"
 
 ---
 
+## Task 10: Conteneurisation Docker
+
+**Files:**
+- Create: `Dockerfile`, `.dockerignore`, `docker-compose.yml`
+- Modify: `README.md` (section Docker)
+
+**Interfaces:**
+- Consumes: `requirements.txt`, le package `detection_ortho/`, `scripts/`, `tests/`.
+- Produces: une image `detection_ortho:latest` qui exécute `pytest` par défaut et
+  permet de lancer les scripts `recon.py` / `run_baseline.py` dans un
+  environnement reproductible (Python 3.12).
+
+> **Note d'exécution :** cette tâche doit être faite **en dernier** (après la
+> Task 9), car l'image copie tout le code et lance la suite de tests complète.
+> Base **`python:3.12-slim`** (pas 3.14). opencv-python nécessite les libs
+> système `libgl1` et `libglib2.0-0`.
+
+- [ ] **Step 1: Écrire le `.dockerignore`**
+
+```
+.venv/
+__pycache__/
+*.pyc
+.git/
+.superpowers/
+tiles_cache/
+recon_out/
+baseline_out/
+*.pt
+datasets/
+runs/
+```
+
+- [ ] **Step 2: Écrire le `Dockerfile`**
+
+```dockerfile
+FROM python:3.12-slim
+
+# Dépendances système requises par opencv-python (libGL.so.1, glib).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Couche dédiée aux dépendances Python (cache de build).
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Code du projet.
+COPY detection_ortho ./detection_ortho
+COPY scripts ./scripts
+COPY tests ./tests
+COPY pyproject.toml .
+
+ENV PYTHONUNBUFFERED=1
+
+# Par défaut : lance la suite de tests (vérifie que l'image est saine).
+CMD ["python", "-m", "pytest", "-q"]
+```
+
+- [ ] **Step 3: Écrire le `docker-compose.yml`**
+
+```yaml
+services:
+  app:
+    build: .
+    image: detection_ortho:latest
+    # Sorties persistées côté hôte : passer --out /app/out/... aux scripts.
+    volumes:
+      - ./out:/app/out
+```
+
+- [ ] **Step 4: Ajouter la section Docker au `README.md`**
+
+Ajouter à la fin de `README.md` :
+
+```markdown
+## Docker (environnement reproductible)
+
+Construire l'image (lance aussi les tests) :
+
+    docker build -t detection_ortho .
+    docker run --rm detection_ortho          # exécute pytest
+
+Lancer un script en persistant les sorties dans ./out :
+
+    docker run --rm -v "$PWD/out:/app/out" detection_ortho \
+        python scripts/recon.py --bbox 6.14 43.41 6.16 43.43 --zoom 19 --out /app/out/recon_out
+
+Ou via docker compose :
+
+    docker compose run --rm app python scripts/run_baseline.py \
+        --bbox 6.14 43.41 6.16 43.43 --out /app/out/baseline_out
+```
+
+- [ ] **Step 5: Construire l'image et vérifier les tests dans le conteneur**
+
+Run: `docker build -t detection_ortho . && docker run --rm detection_ortho`
+Expected : build réussi, puis la suite `pytest` passe **à l'intérieur du conteneur**
+(mêmes tests que Task 9 Step 7). Si le build échoue par absence de réseau dans
+l'environnement d'exécution, reporter DONE_WITH_CONCERNS en indiquant que le
+build n'a pas pu être vérifié ici (les fichiers restent corrects).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add Dockerfile .dockerignore docker-compose.yml README.md
+git commit -m "feat: conteneurisation Docker (image reproductible + pytest)"
+```
+
+---
+
 ## Self-Review (fait à la rédaction)
 
 - **Couverture du spec :** Jalon 0 (acquisition ortho §Task 2–3, labels OSM §Task 4, visualisation §Task 5) ✓ ; Jalon 1 (baseline OpenCV §Task 7, comparaison OSM §Task 8, export §Task 9, dédoublonnage §Task 6) ✓. Les Jalons 2–4 (YOLO, échelle, MapRoulette) sont hors de ce plan par décision — un second plan les couvrira après examen des vraies données.

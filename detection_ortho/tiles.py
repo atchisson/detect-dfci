@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import cv2
 import mercantile
 import requests
 from pyproj import Transformer
@@ -85,3 +86,18 @@ def download_tile(
     resp.raise_for_status()
     path.write_bytes(resp.content)
     return path
+
+
+def save_tile_with_marker(
+    tile_path: Path, px: float, py: float, out_path: Path
+) -> None:
+    """Dessine une croix rouge au pixel (px, py) sur la tuile et sauvegarde."""
+    img = cv2.imread(str(tile_path))
+    if img is None:
+        raise FileNotFoundError(tile_path)
+    x, y = int(round(px)), int(round(py))
+    color = (0, 0, 255)  # BGR rouge
+    cv2.drawMarker(img, (x, y), color, markerType=cv2.MARKER_CROSS,
+                   markerSize=20, thickness=2)
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(out_path), img)

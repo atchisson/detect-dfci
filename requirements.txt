@@ -1,0 +1,7 @@
+requests>=2.31
+mercantile>=1.2
+pyproj>=3.6
+shapely>=2.0
+numpy>=1.26
+opencv-python>=4.9
+pytest>=8.0

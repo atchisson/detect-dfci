@@ -36,3 +36,16 @@ def test_pixel_center_is_inside_tile_bounds():
     x, y, px, py = lonlat_to_pixel(lon, lat, z)
     assert 0 <= px < 256
     assert 0 <= py < 256
+
+
+def test_pixel_corners_match_tile_bounds():
+    # Vérité-terrain indépendante : pixel (0,0) = coin (ouest, nord) de la tuile,
+    # pixel (256,256) = coin (est, sud). Détecte une inversion d'axe.
+    x, y, z = 42, 43, 19
+    b = mercantile.bounds(mercantile.Tile(x, y, z))  # west, south, east, north
+    lon_nw, lat_nw = pixel_to_lonlat(x, y, z, 0, 0)
+    lon_se, lat_se = pixel_to_lonlat(x, y, z, 256, 256)
+    assert abs(lon_nw - b.west) < 1e-6
+    assert abs(lat_nw - b.north) < 1e-6
+    assert abs(lon_se - b.east) < 1e-6
+    assert abs(lat_se - b.south) < 1e-6

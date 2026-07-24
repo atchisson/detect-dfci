@@ -9,6 +9,9 @@ from detection_ortho.baseline_cv import (
 
 def _canvas():
     # Fond vert « végétation » sombre.
+    # Cette couleur doit rester HORS du seuil HSV [hsv_low..hsv_high] utilisé par les
+    # tests (sa saturation est sous la borne basse) pour ne pas être segmentée comme
+    # premier plan.
     return np.full((256, 256, 3), (60, 90, 60), dtype=np.uint8)  # BGR
 
 

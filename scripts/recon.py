@@ -10,8 +10,11 @@ les données avant tout code de détection.
 from __future__ import annotations
 
 import argparse
+import sys
 from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from detection_ortho.osm import fetch_citernes
 from detection_ortho.tiles import (
@@ -41,10 +44,15 @@ def main() -> None:
     for i, c in enumerate(citernes):
         for k, v in c["tags"].items():
             tag_counter[f"{k}={v}"] += 1
-        x, y, px, py = lonlat_to_pixel(c["lon"], c["lat"], args.zoom)
-        tile_path = download_tile(x, y, args.zoom, cache)
-        out_img = images / f"citerne_{i:03d}.png"
-        save_tile_with_marker(tile_path, px, py, out_img)
+        try:
+            x, y, px, py = lonlat_to_pixel(c["lon"], c["lat"], args.zoom)
+            tile_path = download_tile(x, y, args.zoom, cache)
+            out_img = images / f"citerne_{i:03d}.png"
+            save_tile_with_marker(tile_path, px, py, out_img)
+        except Exception as exc:
+            print(f"AVERTISSEMENT : échec sur la citerne {i} ({exc}), on continue.",
+                  file=sys.stderr)
+            continue
 
     print("\nHistogramme des tags :")
     for tag, n in tag_counter.most_common():

@@ -22,7 +22,7 @@ def dedup_points(points: list[dict], radius_m: float) -> list[dict]:
     point non encore absorbé devient un représentant qui absorbe ses voisins.
     Chaque point doit avoir les clés lon, lat, score.
     """
-    remaining = sorted(points, key=lambda p: p["score"], reverse=True)
+    remaining = sorted(points, key=lambda p: p.get("score", 0.0), reverse=True)
     kept: list[dict] = []
     for p in remaining:
         if any(

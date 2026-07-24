@@ -11,6 +11,11 @@ def test_haversine_zero():
     assert haversine_m(6.0, 43.0, 6.0, 43.0) == 0.0
 
 
+def test_haversine_east_west_scaled_by_latitude():
+    d = haversine_m(6.0, 43.0, 7.0, 43.0)  # 1° lon at 43°N
+    assert 80_000 < d < 83_000
+
+
 def test_dedup_merges_close_points_keeps_best_score():
     pts = [
         {"lon": 6.0000, "lat": 43.0000, "score": 0.7},

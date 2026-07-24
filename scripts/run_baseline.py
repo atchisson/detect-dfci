@@ -10,7 +10,10 @@ GeoJSON (matched / detected_only / osm_only) plus un résumé chiffré.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2
 
@@ -57,7 +60,8 @@ def main() -> None:
 
     res = match_detections(detections, osm, radius_m=args.radius)
 
-    write_geojson(points_to_geojson([m["detection"] for m in res["matched"]]),
+    write_geojson(points_to_geojson([{**m["detection"], "osm_tags": m["osm"].get("tags", {})}
+                                      for m in res["matched"]]),
                   args.out / "matched.geojson")
     write_geojson(points_to_geojson(res["detected_only"]),
                   args.out / "detected_only.geojson")
@@ -66,13 +70,15 @@ def main() -> None:
 
     n_match = len(res["matched"])
     n_osm = len(osm)
-    recall = n_match / n_osm if n_osm else float("nan")
     print("\n=== Résumé baseline ===")
     print(f"  Appariées (détectées ∩ OSM) : {n_match}")
     print(f"  Nouvelles (détectées \\ OSM) : {len(res['detected_only'])}")
     print(f"  Manquées (OSM \\ détectées)  : {len(res['osm_only'])}")
-    print(f"  Rappel approximatif          : {recall:.0%}" if n_osm else
-          "  Rappel : n/a (aucune citerne OSM)")
+    if n_osm:
+        recall = n_match / n_osm
+        print(f"  Rappel approximatif          : {recall:.0%}")
+    else:
+        print("  Rappel : n/a (aucune citerne OSM)")
     print(f"\nGeoJSON écrits dans : {args.out}")
 
 

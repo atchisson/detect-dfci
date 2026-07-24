@@ -5,7 +5,10 @@ schéma slippy-map standard : TILEMATRIX=zoom, TILECOL=x, TILEROW=y.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import mercantile
+import requests
 from pyproj import Transformer
 
 WMTS_BASE = "https://data.geopf.fr/wmts"
@@ -56,3 +59,29 @@ def lonlat_to_pixel(
     px = (mx - b.left) / (b.right - b.left) * tile_size
     py = (b.top - my) / (b.top - b.bottom) * tile_size
     return x, y, px, py
+
+
+def tiles_in_bbox(
+    west: float, south: float, east: float, north: float, zoom: int
+) -> list[tuple[int, int]]:
+    """Toutes les tuiles (x, y) couvrant la bbox géographique au zoom donné."""
+    return [
+        (t.x, t.y)
+        for t in mercantile.tiles(west, south, east, north, zooms=zoom)
+    ]
+
+
+def download_tile(
+    x: int, y: int, zoom: int, cache_dir: Path, session=None
+) -> Path:
+    """Télécharge la tuile (x, y, zoom) si absente du cache, retourne son chemin."""
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = cache_dir / f"{zoom}_{x}_{y}.jpg"
+    if path.exists():
+        return path
+    sess = session or requests.Session()
+    resp = sess.get(tile_url(x, y, zoom), timeout=30)
+    resp.raise_for_status()
+    path.write_bytes(resp.content)
+    return path

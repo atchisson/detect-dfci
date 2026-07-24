@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.superpowers/
+tiles_cache/
+recon_out/
+baseline_out/
+*.pt
+datasets/
+runs/

@@ -25,9 +25,8 @@ import numpy as np
 from detection_ortho.osm import fetch_features_geom
 from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
-    write_chip, split_indices, write_data_yaml, lonlat_to_global_px,
+    write_chip, split_indices, write_data_yaml,
 )
-from detection_ortho.tiles import pixel_to_lonlat
 
 ZOOM = 19
 WINDOW = 640

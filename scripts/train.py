@@ -13,6 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def main() -> None:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", type=str, default="dataset/data.yaml")
     ap.add_argument("--epochs", type=int, default=100)

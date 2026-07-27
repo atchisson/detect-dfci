@@ -13,6 +13,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
+def _test_images_dir(data_yaml) -> Path:
+    """Répertoire des images de test à partir du data.yaml (path + test)."""
+    import yaml  # ultralytics embarque pyyaml
+
+    d = yaml.safe_load(Path(data_yaml).read_text(encoding="utf-8"))
+    return Path(d["path"]) / d["test"]
+
+
 def main() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -41,8 +49,7 @@ def main() -> None:
     print(f"  Critère mAP@50 >= {seuil} : {verdict}")
 
     # Prédictions annotées sur le test (inspection visuelle, ex. rejet piscines).
-    test_dir = Path(model.overrides.get("data", "")).parent
-    imgs = Path("dataset/images/test")
+    imgs = _test_images_dir(args.data)
     if imgs.exists():
         model.predict(source=str(imgs), device=args.device, save=True,
                       project=str(args.out), name="test_preds", exist_ok=True)

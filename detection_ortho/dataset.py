@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import random
+import sys
 from pathlib import Path
 
 import cv2
@@ -115,6 +116,7 @@ def assemble_window(
         path = download_tile(x, y, zoom, cache_dir, session=session)
         tile = cv2.imread(str(path))
         if tile is None:
+            print(f"  tuile illisible: {path}", file=sys.stderr)
             continue
         oy = (y - ty_min) * tile_size
         ox = (x - tx_min) * tile_size
@@ -122,7 +124,13 @@ def assemble_window(
     # coin haut-gauche de la fenêtre dans le repère mosaïque
     cx = int(round(origin_gx - tx_min * tile_size))
     cy = int(round(origin_gy - ty_min * tile_size))
+    # borne pour garantir une fenêtre exactement window_px x window_px même
+    # si l'arrondi place la fenêtre à cheval sur le bord de la mosaïque.
+    cx = max(0, min(cx, mosaic_w - window_px))
+    cy = max(0, min(cy, mosaic_h - window_px))
     window = mosaic[cy:cy + window_px, cx:cx + window_px]
+    assert window.shape[:2] == (window_px, window_px), (
+        f"fenêtre {window.shape[:2]} != ({window_px}, {window_px})")
     return window, origin_gx, origin_gy
 
 

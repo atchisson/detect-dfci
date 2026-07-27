@@ -37,12 +37,32 @@ def main() -> None:
     ap.add_argument("--zoom", type=int, default=19)
     ap.add_argument("--radius", type=float, default=25.0,
                     help="rayon d'appariement OSM en mètres")
+    ap.add_argument("--hsv-low", type=int, nargs=3, default=None,
+                    metavar=("H", "S", "V"),
+                    help="borne HSV basse (défaut : default_params)")
+    ap.add_argument("--hsv-high", type=int, nargs=3, default=None,
+                    metavar=("H", "S", "V"),
+                    help="borne HSV haute (défaut : default_params)")
+    ap.add_argument("--min-area", type=float, default=None,
+                    help="aire minimale d'un blob en pixels")
+    ap.add_argument("--max-area", type=float, default=None,
+                    help="aire maximale d'un blob en pixels")
     ap.add_argument("--out", type=Path, default=Path("baseline_out"))
     args = ap.parse_args()
 
     west, south, east, north = args.bbox
     cache = args.out / "tiles_cache"
     params = default_params()
+    if args.hsv_low is not None:
+        params.hsv_low = tuple(args.hsv_low)
+    if args.hsv_high is not None:
+        params.hsv_high = tuple(args.hsv_high)
+    if args.min_area is not None:
+        params.min_area = args.min_area
+    if args.max_area is not None:
+        params.max_area = args.max_area
+    print(f"Paramètres : hsv_low={params.hsv_low} hsv_high={params.hsv_high} "
+          f"area=[{params.min_area},{params.max_area}]")
 
     tiles = tiles_in_bbox(west, south, east, north, args.zoom)
     print(f"{len(tiles)} tuile(s) à traiter...")

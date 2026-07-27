@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import requests
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Instance OSM-France (moins chargée que overpass-api.de, pertinente pour la France).
+OVERPASS_URL = "https://overpass.openstreetmap.fr/api/interpreter"
 
 # Certaines instances Overpass (derrière un WAF) renvoient 406 sur le
 # User-Agent par défaut de python-requests. On s'identifie explicitement

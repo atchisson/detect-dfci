@@ -65,3 +65,55 @@ def fetch_citernes(
     )
     resp.raise_for_status()
     return parse_overpass_response(resp.json())
+
+
+def build_geom_query(
+    selectors: list[tuple[str, str]],
+    west: float, south: float, east: float, north: float,
+) -> str:
+    """Requête Overpass renvoyant nodes et ways (avec géométrie) pour les tags."""
+    bbox = f"{south},{west},{north},{east}"  # Overpass attend s,w,n,e
+    clauses = []
+    for key, value in selectors:
+        clauses.append(f'  node["{key}"="{value}"]({bbox});')
+        clauses.append(f'  way["{key}"="{value}"]({bbox});')
+    body = "\n".join(clauses)
+    return f"[out:json][timeout:120];\n(\n{body}\n);\nout geom;"
+
+
+def parse_geom_response(data: dict) -> list[dict]:
+    """Éléments avec géométrie : node -> lon/lat, way -> liste de sommets.
+
+    Les éléments sans position/géométrie exploitable sont ignorés.
+    """
+    out: list[dict] = []
+    for el in data.get("elements", []):
+        tags = el.get("tags", {})
+        if el.get("type") == "node":
+            lon, lat = el.get("lon"), el.get("lat")
+            if lon is None or lat is None:
+                continue
+            out.append({"type": "node", "tags": tags, "lon": lon, "lat": lat})
+        else:
+            geom = el.get("geometry")
+            if not geom:
+                continue
+            out.append({"type": "way", "tags": tags, "geometry": geom})
+    return out
+
+
+def fetch_features_geom(
+    selectors: list[tuple[str, str]],
+    west: float, south: float, east: float, north: float, session=None,
+) -> list[dict]:
+    """Interroge Overpass avec géométrie et retourne les éléments parsés."""
+    sess = session or requests.Session()
+    query = build_geom_query(selectors, west, south, east, north)
+    resp = sess.post(
+        OVERPASS_URL,
+        data=query,
+        headers={"User-Agent": USER_AGENT},
+        timeout=180,
+    )
+    resp.raise_for_status()
+    return parse_geom_response(resp.json())

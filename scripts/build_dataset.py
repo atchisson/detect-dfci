@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import random
+import shutil
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -139,6 +140,11 @@ def main() -> None:
     if errors:
         print(f"  {errors} tuile(s) en échec (réessayées à l'assemblage).",
               file=sys.stderr)
+
+    # Repart d'un dataset propre (évite les orphelins d'un run précédent) ;
+    # le cache de tuiles (dossier séparé) est préservé.
+    shutil.rmtree(imgs, ignore_errors=True)
+    shutil.rmtree(lbls, ignore_errors=True)
 
     # --- Split et génération des chips (assemblées depuis le cache) ---
     split = split_indices(len(records), seed=args.seed)

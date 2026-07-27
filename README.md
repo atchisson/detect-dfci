@@ -29,3 +29,24 @@ Ou via docker compose :
 
     docker compose run --rm app python scripts/run_baseline.py \
         --bbox 6.14 43.41 6.16 43.43 --out /app/out/baseline_out
+
+## Jalon 2 — Détecteur YOLO
+
+1. Générer le dataset depuis OSM + ortho IGN :
+
+       python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 --out dataset
+
+   Vérifier `dataset/qa_positives.png` et relancer avec `--exclude <indices>`
+   pour écarter les intrus.
+
+2. Entraîner (local CPU par défaut) :
+
+       python scripts/train.py --data dataset/data.yaml --epochs 100 --device cpu
+
+   (Option GPU : `notebooks/train_yolo.ipynb` sur Colab.)
+
+3. Évaluer sur le jeu de test :
+
+       python scripts/evaluate.py --weights runs/citernes/weights/best.pt --data dataset/data.yaml
+
+   Objectif : mAP@50 ≥ 0,60 et rejet visible des piscines/toits.

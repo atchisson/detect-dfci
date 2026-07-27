@@ -61,6 +61,8 @@ def main() -> None:
                     metavar=("WEST", "SOUTH", "EAST", "NORTH"))
     ap.add_argument("--negatives", type=int, default=120,
                     help="nombre de tuiles de fond aléatoires")
+    ap.add_argument("--max-pools", type=int, default=300,
+                    help="nombre max de piscines (négatifs durs) échantillonnées")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--exclude", type=int, nargs="*", default=[],
                     help="indices de positifs à écarter (intrus repérés au QA)")
@@ -79,13 +81,18 @@ def main() -> None:
     boxes = [b for i, b in enumerate(boxes) if i not in set(args.exclude)]
     print(f"{len(boxes)} citerne(s) retenue(s).")
 
-    # --- Négatifs : piscines ---
+    rng = random.Random(args.seed)
+
+    # --- Négatifs : piscines (échantillonnées pour rester du même ordre que les positifs) ---
     print("Récupération des piscines (leisure=swimming_pool)...")
     pool_el = fetch_retry([("leisure", "swimming_pool")], west, south, east, north)
     pools = [element_to_box(el) for el in pool_el]
-    print(f"{len(pools)} piscine(s).")
+    n_pools_found = len(pools)
+    if n_pools_found > args.max_pools:
+        pools = rng.sample(pools, args.max_pools)
+    print(f"{n_pools_found} piscine(s) trouvée(s), {len(pools)} retenue(s) "
+          f"(--max-pools={args.max_pools}).")
 
-    rng = random.Random(args.seed)
     records = []  # (name, lon, lat, bbox_geo|None)
     for i, b in enumerate(boxes):
         records.append((f"citerne_{i:04d}", b["lon"], b["lat"], b["bbox_geo"]))

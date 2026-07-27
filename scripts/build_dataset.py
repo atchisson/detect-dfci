@@ -31,8 +31,9 @@ except ImportError:  # repli si tqdm absent : identité
 from detection_ortho.osm import fetch_features_geom
 from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
-    write_chip, split_indices, write_data_yaml,
+    write_chip, split_indices, write_data_yaml, window_tiles,
 )
+from detection_ortho.tiles import download_tile
 
 ZOOM = 19
 WINDOW = 640
@@ -105,7 +106,19 @@ def main() -> None:
         lat = rng.uniform(south, north)
         records.append((f"bg_{i:04d}", lon, lat, None))
 
-    # --- Split et génération des chips ---
+    # --- Récupération des images : pré-téléchargement des tuiles (dédupliquées) ---
+    needed = set()
+    for _name, lon, lat, _bbox in records:
+        tiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
+        needed.update(tiles)
+    print(f"{len(needed)} tuile(s) ortho à récupérer...")
+    for (x, y) in tqdm(sorted(needed), desc="Récupération des images", unit="tuile"):
+        try:
+            download_tile(x, y, ZOOM, cache)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  tuile {x},{y} échec ({exc})", file=sys.stderr)
+
+    # --- Split et génération des chips (assemblées depuis le cache) ---
     split = split_indices(len(records), seed=args.seed)
     where = {}
     for part, idxs in split.items():

@@ -13,8 +13,9 @@ class FakeSession:
     def __init__(self):
         self.calls = 0
 
-    def get(self, url, timeout=30):
+    def get(self, url, headers=None, timeout=30):
         self.calls += 1
+        self.last_headers = headers
         return FakeResp()
 
 

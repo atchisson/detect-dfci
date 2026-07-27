@@ -15,6 +15,9 @@ from pyproj import Transformer
 WMTS_BASE = "https://data.geopf.fr/wmts"
 LAYER = "ORTHOIMAGERY.ORTHOPHOTOS"
 
+# On s'identifie sur les appels HTTP avec l'URL du dépôt.
+USER_AGENT = "detect-dfci/0.1 (+https://github.com/atchisson/detect-dfci)"
+
 # Transformateurs Web Mercator (EPSG:3857) <-> WGS84 (EPSG:4326).
 _TO_MERC = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
 _TO_WGS = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
@@ -82,7 +85,11 @@ def download_tile(
     if path.exists():
         return path
     sess = session or requests.Session()
-    resp = sess.get(tile_url(x, y, zoom), timeout=30)
+    resp = sess.get(
+        tile_url(x, y, zoom),
+        headers={"User-Agent": USER_AGENT},
+        timeout=30,
+    )
     resp.raise_for_status()
     path.write_bytes(resp.content)
     return path

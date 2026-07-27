@@ -5,6 +5,11 @@ import requests
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
+# Certaines instances Overpass (derrière un WAF) renvoient 406 sur le
+# User-Agent par défaut de python-requests. On s'identifie explicitement
+# avec l'URL du dépôt, comme le recommande l'étiquette Overpass.
+USER_AGENT = "detect-dfci/0.1 (+https://github.com/atchisson/detect-dfci)"
+
 # (clé, valeur) des tags OSM candidats pour les citernes / réserves incendie.
 # À affiner au Jalon 0 selon ce qui est réellement présent sur la zone.
 CITERNE_TAGS: list[tuple[str, str]] = [
@@ -52,6 +57,11 @@ def fetch_citernes(
     """Interroge Overpass et retourne les citernes de la bbox."""
     sess = session or requests.Session()
     query = build_overpass_query(west, south, east, north)
-    resp = sess.post(OVERPASS_URL, data=query, timeout=90)
+    resp = sess.post(
+        OVERPASS_URL,
+        data=query,
+        headers={"User-Agent": USER_AGENT},
+        timeout=90,
+    )
     resp.raise_for_status()
     return parse_overpass_response(resp.json())

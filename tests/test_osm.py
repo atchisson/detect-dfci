@@ -39,7 +39,7 @@ def test_fetch_citernes_uses_session(monkeypatch):
             ]}
 
     class FakeSession:
-        def post(self, url, data, timeout=90):
+        def post(self, url, data, headers=None, timeout=90):
             return FakeResp()
 
     pts = fetch_citernes(6.14, 43.41, 6.16, 43.43, session=FakeSession())

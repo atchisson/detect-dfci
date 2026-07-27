@@ -165,3 +165,17 @@ def split_indices(
         "val": sorted(idx[n_train:n_train + n_val]),
         "test": sorted(idx[n_train + n_val:]),
     }
+
+
+def write_data_yaml(root, path) -> None:
+    """Écrit un data.yaml Ultralytics (1 classe) pointant vers root."""
+    root = Path(root).resolve()
+    content = (
+        f"path: {root.as_posix()}\n"
+        "train: images/train\n"
+        "val: images/val\n"
+        "test: images/test\n"
+        "names:\n"
+        "  0: citerne\n"
+    )
+    Path(path).write_text(content, encoding="utf-8")

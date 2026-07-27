@@ -6,3 +6,5 @@ tiles_cache/
 *.pt
 datasets/
 runs/
+out/
+dataset/

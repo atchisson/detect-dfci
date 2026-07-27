@@ -26,6 +26,11 @@ from detection_ortho.geojson_io import points_to_geojson, write_geojson
 
 
 def main() -> None:
+    # Évite un UnicodeEncodeError si la console n'est pas en UTF-8 (Windows cp1252).
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     ap = argparse.ArgumentParser()
     ap.add_argument("--bbox", type=float, nargs=4, required=True,
                     metavar=("WEST", "SOUTH", "EAST", "NORTH"))
@@ -71,9 +76,9 @@ def main() -> None:
     n_match = len(res["matched"])
     n_osm = len(osm)
     print("\n=== Résumé baseline ===")
-    print(f"  Appariées (détectées ∩ OSM) : {n_match}")
-    print(f"  Nouvelles (détectées \\ OSM) : {len(res['detected_only'])}")
-    print(f"  Manquées (OSM \\ détectées)  : {len(res['osm_only'])}")
+    print(f"  Appariées (détectées ET dans OSM) : {n_match}")
+    print(f"  Nouvelles (détectées, absentes OSM) : {len(res['detected_only'])}")
+    print(f"  Manquées (dans OSM, non détectées)  : {len(res['osm_only'])}")
     if n_osm:
         recall = n_match / n_osm
         print(f"  Rappel approximatif          : {recall:.0%}")

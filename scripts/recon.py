@@ -25,6 +25,11 @@ from detection_ortho.tiles import (
 
 
 def main() -> None:
+    # Évite un UnicodeEncodeError si la console n'est pas en UTF-8 (Windows cp1252).
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     ap = argparse.ArgumentParser()
     ap.add_argument("--bbox", type=float, nargs=4, required=True,
                     metavar=("WEST", "SOUTH", "EAST", "NORTH"))

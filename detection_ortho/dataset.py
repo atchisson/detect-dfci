@@ -6,6 +6,7 @@ imagettes depuis les tuiles et écriture au format YOLO.
 from __future__ import annotations
 
 import math
+import random
 from pathlib import Path
 
 import cv2
@@ -134,3 +135,33 @@ def write_chip(image, label_lines, images_dir, labels_dir, name: str) -> None:
     cv2.imwrite(str(images_dir / f"{name}.jpg"), image)
     (labels_dir / f"{name}.txt").write_text(
         "\n".join(label_lines), encoding="utf-8")
+
+
+DEFAULT_BOX_M = 13.0  # médiane observée des citernes dpt 37
+
+
+def element_to_box(element: dict, default_box_m: float = DEFAULT_BOX_M) -> dict:
+    """Boîte géo d'un élément OSM : polygone (way) ou boîte fixe (node)."""
+    if element["type"] == "way":
+        bbox = polygon_bounds(element["geometry"])
+        lon = (bbox[0] + bbox[2]) / 2
+        lat = (bbox[1] + bbox[3]) / 2
+    else:
+        lon, lat = element["lon"], element["lat"]
+        bbox = fixed_box_geo(lon, lat, default_box_m)
+    return {"lon": lon, "lat": lat, "bbox_geo": bbox, "tags": element.get("tags", {})}
+
+
+def split_indices(
+    n: int, seed: int = 0, ratios: tuple[float, float, float] = (0.7, 0.15, 0.15)
+) -> dict:
+    """Partition déterministe des indices 0..n-1 en train/val/test."""
+    idx = list(range(n))
+    random.Random(seed).shuffle(idx)
+    n_train = int(n * ratios[0])
+    n_val = int(n * ratios[1])
+    return {
+        "train": sorted(idx[:n_train]),
+        "val": sorted(idx[n_train:n_train + n_val]),
+        "test": sorted(idx[n_train + n_val:]),
+    }

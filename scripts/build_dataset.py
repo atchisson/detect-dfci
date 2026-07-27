@@ -22,6 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cv2
 import numpy as np
 
+try:
+    from tqdm import tqdm
+except ImportError:  # repli si tqdm absent : identité
+    def tqdm(iterable, **kwargs):
+        return iterable
+
 from detection_ortho.osm import fetch_features_geom
 from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
@@ -100,7 +106,9 @@ def main() -> None:
             where[i] = part
 
     qa_crops = []
-    for i, (name, lon, lat, bbox_geo) in enumerate(records):
+    for i, (name, lon, lat, bbox_geo) in enumerate(
+        tqdm(records, desc="Génération des chips", unit="chip")
+    ):
         part = where[i]
         try:
             win_img, ogx, ogy = assemble_window(lon, lat, ZOOM, WINDOW, cache)

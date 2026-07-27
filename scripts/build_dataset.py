@@ -15,12 +15,14 @@ import argparse
 import random
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2
 import numpy as np
+import requests
 
 try:
     from tqdm import tqdm
@@ -64,6 +66,8 @@ def main() -> None:
                     help="nombre de tuiles de fond aléatoires")
     ap.add_argument("--max-pools", type=int, default=300,
                     help="nombre max de piscines (négatifs durs) échantillonnées")
+    ap.add_argument("--workers", type=int, default=12,
+                    help="téléchargements de tuiles en parallèle")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--exclude", type=int, nargs="*", default=[],
                     help="indices de positifs à écarter (intrus repérés au QA)")
@@ -106,17 +110,35 @@ def main() -> None:
         lat = rng.uniform(south, north)
         records.append((f"bg_{i:04d}", lon, lat, None))
 
-    # --- Récupération des images : pré-téléchargement des tuiles (dédupliquées) ---
+    # --- Récupération des images : pré-téléchargement parallèle des tuiles (dédupliquées) ---
     needed = set()
     for _name, lon, lat, _bbox in records:
         tiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
         needed.update(tiles)
-    print(f"{len(needed)} tuile(s) ortho à récupérer...")
-    for (x, y) in tqdm(sorted(needed), desc="Récupération des tuiles", unit="tuile"):
+    print(f"{len(needed)} tuile(s) ortho à récupérer (parallèle x{args.workers})...")
+
+    # Session partagée = keep-alive (évite un handshake TCP/TLS par tuile).
+    session = requests.Session()
+
+    def _download(xy):
+        x, y = xy
         try:
-            download_tile(x, y, ZOOM, cache)
+            download_tile(x, y, ZOOM, cache, session=session)
+            return None
         except Exception as exc:  # noqa: BLE001
-            print(f"  tuile {x},{y} échec ({exc})", file=sys.stderr)
+            return f"tuile {x},{y} échec ({exc})"
+
+    errors = 0
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = [pool.submit(_download, xy) for xy in needed]
+        for fut in tqdm(as_completed(futures), total=len(futures),
+                        desc="Récupération des tuiles", unit="tuile"):
+            err = fut.result()
+            if err:
+                errors += 1
+    if errors:
+        print(f"  {errors} tuile(s) en échec (réessayées à l'assemblage).",
+              file=sys.stderr)
 
     # --- Split et génération des chips (assemblées depuis le cache) ---
     split = split_indices(len(records), seed=args.seed)

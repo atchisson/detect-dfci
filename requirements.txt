@@ -5,3 +5,4 @@ shapely>=2.0
 numpy>=1.26
 opencv-python>=4.9
 pytest>=8.0
+ultralytics>=8.2

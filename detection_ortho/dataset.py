@@ -6,8 +6,12 @@ imagettes depuis les tuiles et écriture au format YOLO.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
-from detection_ortho.tiles import lonlat_to_pixel
+import cv2
+import numpy as np
+
+from detection_ortho.tiles import lonlat_to_pixel, download_tile
 
 _M_PER_DEG_LAT = 111320.0
 
@@ -69,3 +73,64 @@ def to_yolo_label(
     cx = (x0 + x1) / 2 / window_px
     cy = (y0 + y1) / 2 / window_px
     return f"{cls} {cx:.6f} {cy:.6f} {w / window_px:.6f} {h / window_px:.6f}"
+
+
+def window_tiles(
+    center_lon: float, center_lat: float, zoom: int, window_px: int,
+    tile_size: int = 256,
+) -> tuple[list[tuple[int, int]], float, float]:
+    """Tuiles couvrant une fenêtre window_px centrée sur le point.
+
+    Retourne (liste de (x,y), origin_gx, origin_gy) où origin est le pixel
+    absolu du coin haut-gauche de la fenêtre.
+    """
+    gx, gy = lonlat_to_global_px(center_lon, center_lat, zoom, tile_size)
+    origin_gx = gx - window_px / 2
+    origin_gy = gy - window_px / 2
+    tx_min = int(origin_gx // tile_size)
+    ty_min = int(origin_gy // tile_size)
+    tx_max = int((origin_gx + window_px - 1) // tile_size)
+    ty_max = int((origin_gy + window_px - 1) // tile_size)
+    tiles = [(x, y)
+             for x in range(tx_min, tx_max + 1)
+             for y in range(ty_min, ty_max + 1)]
+    return tiles, origin_gx, origin_gy
+
+
+def assemble_window(
+    center_lon: float, center_lat: float, zoom: int, window_px: int,
+    cache_dir, session=None, tile_size: int = 256,
+) -> tuple[np.ndarray, float, float]:
+    """Assemble une mosaïque de tuiles et en extrait la fenêtre centrée."""
+    tiles, origin_gx, origin_gy = window_tiles(
+        center_lon, center_lat, zoom, window_px, tile_size)
+    xs = [t[0] for t in tiles]
+    ys = [t[1] for t in tiles]
+    tx_min, ty_min = min(xs), min(ys)
+    mosaic_h = (max(ys) - ty_min + 1) * tile_size
+    mosaic_w = (max(xs) - tx_min + 1) * tile_size
+    mosaic = np.zeros((mosaic_h, mosaic_w, 3), np.uint8)
+    for (x, y) in tiles:
+        path = download_tile(x, y, zoom, cache_dir, session=session)
+        tile = cv2.imread(str(path))
+        if tile is None:
+            continue
+        oy = (y - ty_min) * tile_size
+        ox = (x - tx_min) * tile_size
+        mosaic[oy:oy + tile_size, ox:ox + tile_size] = tile
+    # coin haut-gauche de la fenêtre dans le repère mosaïque
+    cx = int(round(origin_gx - tx_min * tile_size))
+    cy = int(round(origin_gy - ty_min * tile_size))
+    window = mosaic[cy:cy + window_px, cx:cx + window_px]
+    return window, origin_gx, origin_gy
+
+
+def write_chip(image, label_lines, images_dir, labels_dir, name: str) -> None:
+    """Écrit l'imagette .jpg et le label .txt (liste vide = négatif)."""
+    images_dir = Path(images_dir)
+    labels_dir = Path(labels_dir)
+    images_dir.mkdir(parents=True, exist_ok=True)
+    labels_dir.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(images_dir / f"{name}.jpg"), image)
+    (labels_dir / f"{name}.txt").write_text(
+        "\n".join(label_lines), encoding="utf-8")

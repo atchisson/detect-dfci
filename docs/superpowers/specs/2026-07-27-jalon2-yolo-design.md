@@ -37,8 +37,8 @@ grande échelle ni MapRoulette dans ce jalon.
   routes, champs). Imagettes sans boîte.
 - **Données : Indre-et-Loire (dpt 37) uniquement.** BBox de travail :
   `west=0.05, south=46.72, east=1.06, north=47.72`.
-- **Modèle : YOLOv8n**, transfer learning depuis COCO, image 640, entraîné sur
-  Google Colab (T4 gratuit).
+- **Modèle : YOLOv8n**, transfer learning depuis COCO, image 640, **entraîné
+  en local sur CPU** (Ryzen 2600X) ; Colab GPU en option.
 - **Taille des objets (mesurée) :** médiane 13 × 13 m, plage 6–62 m → ≈ 44 px
   de côté à zoom 19 (≈ 0,3 m/px). Détectable.
 
@@ -110,14 +110,20 @@ Fonctions I/O :
   `dataset/images/{train,val,test}/`, `dataset/labels/{train,val,test}/`,
   `dataset/data.yaml` (1 classe `citerne`).
 
-### E. Entraînement (`notebooks/train_yolo.ipynb` + `scripts/train.py`)
+### E. Entraînement (`scripts/train.py` principal ; Colab optionnel)
 
-- **Ultralytics YOLOv8n**, `model.train(data="data.yaml", epochs=…, imgsz=640,
-  pretrained=True)` (poids COCO). Augmentation par défaut d'Ultralytics
-  (flips, rotations, jitter HSV — pertinent vu la variabilité de couleur).
-- Notebook Colab versionné ; monte le dataset (zip depuis le repo ou Drive).
-  `scripts/train.py` = wrapper local équivalent (petit entraînement / CI).
-- Sortie : `best.pt` rapatrié en local (git-ignoré).
+- **Chemin principal : entraînement LOCAL sur CPU** (Ryzen 2600X). Le matériel
+  GPU disponible est écarté : Quadro P620 = 2 Go VRAM (trop juste, risque
+  d'OOM + config CUDA) ; RX 5700 XT = AMD sous Windows (pas de CUDA/ROCm).
+- **`scripts/train.py`** : wrapper Ultralytics YOLOv8n,
+  `model.train(data="data.yaml", epochs=…, imgsz=640, pretrained=True,
+  device=…)`. Option `--device` (défaut **`cpu`**) ; augmentation par défaut
+  d'Ultralytics (flips, rotations, jitter HSV — pertinent vu la variabilité de
+  couleur). Pour ~200 images sur un modèle nano, un run CPU est de l'ordre de
+  1–3 h — acceptable en tâche de fond.
+- **Colab reste une option** (`notebooks/train_yolo.ipynb`, T4 gratuit) pour qui
+  veut de la vitesse, mais n'est PAS le chemin nominal.
+- Sortie : `best.pt` rapatrié / produit en local (git-ignoré).
 
 ### F. Évaluation (`scripts/evaluate.py`)
 
@@ -135,10 +141,10 @@ Fonctions I/O :
 
 ## Stack technique (ajouts au projet)
 
-- `ultralytics` (YOLOv8) — ajouté à `requirements.txt`.
+- `ultralytics` (YOLOv8) — ajouté à `requirements.txt` (installe PyTorch CPU).
 - Réutilise : `detection_ortho.tiles` (téléchargement, `lonlat_to_pixel`),
   `numpy`, `opencv-python`, `requests`.
-- Colab pour l'entraînement GPU.
+- Entraînement local CPU (Ryzen 2600X) ; Colab GPU en option.
 
 ## Intégration avec l'existant
 

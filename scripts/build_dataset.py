@@ -112,7 +112,7 @@ def main() -> None:
         tiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
         needed.update(tiles)
     print(f"{len(needed)} tuile(s) ortho à récupérer...")
-    for (x, y) in tqdm(sorted(needed), desc="Récupération des images", unit="tuile"):
+    for (x, y) in tqdm(sorted(needed), desc="Récupération des tuiles", unit="tuile"):
         try:
             download_tile(x, y, ZOOM, cache)
         except Exception as exc:  # noqa: BLE001

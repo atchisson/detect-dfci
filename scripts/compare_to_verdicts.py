@@ -25,7 +25,10 @@ def _load_points(geojson_path: Path) -> list[dict]:
     fc = json.loads(geojson_path.read_text(encoding="utf-8"))
     pts = []
     for feat in fc.get("features", []):
-        coords = feat["geometry"]["coordinates"]
+        geom = feat.get("geometry") or {}
+        coords = geom.get("coordinates")
+        if not coords or len(coords) < 2:
+            continue
         pts.append({"lon": coords[0], "lat": coords[1]})
     return pts
 

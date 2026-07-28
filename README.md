@@ -88,3 +88,8 @@ vous-même dans l'interface MapRoulette.
 
        python scripts/compare_to_verdicts.py \
            --detections inference_out/detected_only.geojson --verdicts verdicts.csv
+
+**Note** : le mAP test rapporté par `train.py` n'est **pas comparable
+directement** d'une itération à l'autre — ajouter `--verdicts` change
+`len(records)`, ce qui recompose le split 70/15/15. Le vrai gain se lit via
+`compare_to_verdicts.py` (ré-inférence sur la même emprise).

@@ -8,3 +8,4 @@ datasets/
 runs/
 out/
 dataset/
+inference_out/

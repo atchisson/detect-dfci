@@ -25,18 +25,23 @@ import cv2
 import numpy as np
 import requests
 
-try:
-    from tqdm import tqdm
-except ImportError:  # repli si tqdm absent : identité
-    def tqdm(iterable, **kwargs):
-        return iterable
-
 from detection_ortho.osm import fetch_features_geom
 from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
     write_chip, split_indices, write_data_yaml, window_tiles,
 )
 from detection_ortho.tiles import download_tile
+
+
+def progress(iterable, total, label):
+    """Avancement en texte clair sur stdout (fiable partout, ex. PowerShell)."""
+    total = int(total or 0)
+    step = max(1, total // 50) if total else 1000
+    for i, item in enumerate(iterable, 1):
+        if i % step == 0 or i == total:
+            pct = f" ({i * 100 // total}%)" if total else ""
+            print(f"  {label}: {i}/{total}{pct}", flush=True)
+        yield item
 
 ZOOM = 19
 WINDOW = 640
@@ -132,8 +137,8 @@ def main() -> None:
     errors = 0
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = [pool.submit(_download, xy) for xy in needed]
-        for fut in tqdm(as_completed(futures), total=len(futures),
-                        desc="Récupération des tuiles", unit="tuile"):
+        for fut in progress(as_completed(futures), len(futures),
+                            "Récupération des tuiles"):
             err = fut.result()
             if err:
                 errors += 1
@@ -155,7 +160,7 @@ def main() -> None:
 
     qa_crops = []
     for i, (name, lon, lat, bbox_geo) in enumerate(
-        tqdm(records, desc="Génération des chips", unit="chip")
+        progress(records, len(records), "Génération des chips")
     ):
         part = where[i]
         try:

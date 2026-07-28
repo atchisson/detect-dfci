@@ -25,12 +25,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-try:
-    from tqdm import tqdm
-except ImportError:
-    def tqdm(it, **k):
-        return it
-
 from detection_ortho.osm import fetch_relation_ways, fetch_citernes
 from detection_ortho.infer import (
     ways_to_polygon, windows_over_polygon, boxes_to_points, result_to_boxes,
@@ -41,6 +35,18 @@ from detection_ortho.geo import dedup_points
 from detection_ortho.compare import match_detections
 from detection_ortho.geojson_io import points_to_geojson, write_geojson
 from detection_ortho.maproulette import to_maproulette_tasks
+
+
+def progress(iterable, total, label):
+    """Affiche l'avancement en texte clair sur stdout (fiable partout, ex.
+    PowerShell, contrairement aux barres tqdm sur stderr). ~1 ligne / 2%."""
+    total = int(total or 0)
+    step = max(1, total // 50) if total else 1000
+    for i, item in enumerate(iterable, 1):
+        if i % step == 0 or i == total:
+            pct = f" ({i * 100 // total}%)" if total else ""
+            print(f"  {label}: {i}/{total}{pct}", flush=True)
+        yield item
 
 ZOOM = 19
 WINDOW = 640
@@ -114,8 +120,8 @@ def main() -> None:
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futs = [pool.submit(_dl, xy) for xy in needed]
         n_fail = 0
-        for fut in tqdm(as_completed(futs), total=len(futs),
-                        desc="Récupération des tuiles", unit="tuile"):
+        for fut in progress(as_completed(futs), len(futs),
+                            "Récupération des tuiles"):
             if fut.result() is not None:
                 n_fail += 1
         if n_fail:
@@ -126,7 +132,7 @@ def main() -> None:
     from ultralytics import YOLO
     model = YOLO(args.weights)
     detections: list[dict] = []
-    for lon, lat in tqdm(centers, desc="Inférence", unit="fenêtre"):
+    for lon, lat in progress(centers, len(centers), "Inférence"):
         try:
             img, ogx, ogy = assemble_window(lon, lat, ZOOM, WINDOW, cache)
         except Exception as exc:  # noqa: BLE001

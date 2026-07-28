@@ -197,3 +197,24 @@ def global_px_to_lonlat(
     x, px = divmod(gx, tile_size)
     y, py = divmod(gy, tile_size)
     return pixel_to_lonlat(int(x), int(y), zoom, px, py, tile_size)
+
+
+def parse_verdicts(lines: list[str]) -> list[dict]:
+    """Parse les lignes d'un CSV de revue `index,lat,lon,score,verdict`.
+
+    Ne conserve que les verdicts `vrai`/`faux` ; ignore l'en-tête, `skip`,
+    `non_revu` et les lignes malformées. Retourne {lon, lat, verdict}.
+    """
+    out: list[dict] = []
+    for line in lines:
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 5:
+            continue
+        _idx, lat, lon, _score, verdict = parts[:5]
+        if verdict not in ("vrai", "faux"):
+            continue
+        try:
+            out.append({"lon": float(lon), "lat": float(lat), "verdict": verdict})
+        except ValueError:
+            continue
+    return out

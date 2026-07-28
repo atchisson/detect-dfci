@@ -74,7 +74,7 @@ var ortho = L.tileLayer(
   {maxNativeZoom:19, maxZoom:21, attribution:"Ortho © IGN / Géoplateforme"});
 var osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
   {maxZoom:19, attribution:"© OpenStreetMap"});
-var map = L.map("map", {layers:[ortho]});
+var map = L.map("map", {layers:[ortho]}).setView([47.39, 0.68], 11);
 L.control.layers({"Ortho IGN":ortho, "OpenStreetMap":osm}).addTo(map);
 
 function pkey(lat,lon){ return lat.toFixed(6)+","+lon.toFixed(6); }
@@ -104,7 +104,7 @@ DATA.layers.forEach(function(layer){
 function styleMarker(rec){
   var v=verdicts[rec.key];
   var col = v==="vrai"?"#1faa4b" : v==="faux"?"#e21c1c" : v==="skip"?"#888" : "#1e63ff";
-  rec.marker.setStyle({color:col, fillColor:col, fillOpacity: v?0.8:0.4, radius: v?7:6});
+  rec.marker.setStyle({color:col, fillColor:col, fillOpacity: v?0.8:0.4, radius: v?7:6, weight:2});
 }
 
 var idx = 0;
@@ -114,9 +114,9 @@ function goTo(i){
   if(!candidates.length) return;
   idx = (i+candidates.length)%candidates.length;
   var r=candidates[idx];
-  candidates.forEach(function(x){ x.marker.setStyle({weight:2}); styleMarker(x); });
+  map.setView([r.lat, r.lon], 19);                 // vue d'abord -> marqueurs projetés
+  candidates.forEach(function(x){ styleMarker(x); });
   r.marker.setStyle({weight:5, color:"#ffcc00"});   // surbrillance courant
-  map.setView([r.lat, r.lon], 19);
   document.getElementById("prog").innerHTML = "Candidat <b>"+(idx+1)+" / "+candidates.length+"</b>";
   document.getElementById("score").innerHTML = "score : "+(r.score!=null?r.score.toFixed(2):"?")+
      (verdicts[r.key]?(" — <b>"+verdicts[r.key]+"</b>"):"");

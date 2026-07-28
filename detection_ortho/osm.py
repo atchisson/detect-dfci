@@ -118,3 +118,37 @@ def fetch_features_geom(
     )
     resp.raise_for_status()
     return parse_geom_response(resp.json())
+
+
+def build_boundary_query(name: str) -> str:
+    """Requête Overpass : relation administrative `name` avec géométrie."""
+    return (
+        f'[out:json][timeout:180];\n'
+        f'relation["name"="{name}"]["boundary"="administrative"];\n'
+        f'out geom;'
+    )
+
+
+def parse_relation_ways(data: dict) -> list[list[dict]]:
+    """Liste des géométries (sommets {lon,lat}) des ways membres des relations."""
+    ways: list[list[dict]] = []
+    for el in data.get("elements", []):
+        if el.get("type") != "relation":
+            continue
+        for m in el.get("members", []):
+            if m.get("type") == "way" and m.get("geometry"):
+                ways.append(m["geometry"])
+    return ways
+
+
+def fetch_relation_ways(name: str, session=None) -> list[list[dict]]:
+    """Récupère les ways membres de la relation administrative `name`."""
+    sess = session or requests.Session()
+    resp = sess.post(
+        OVERPASS_URL,
+        data=build_boundary_query(name),
+        headers={"User-Agent": USER_AGENT},
+        timeout=180,
+    )
+    resp.raise_for_status()
+    return parse_relation_ways(resp.json())

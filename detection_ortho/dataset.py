@@ -187,3 +187,13 @@ def write_data_yaml(root, path) -> None:
         "  0: citerne\n"
     )
     Path(path).write_text(content, encoding="utf-8")
+
+
+def global_px_to_lonlat(
+    gx: float, gy: float, zoom: int, tile_size: int = 256
+) -> tuple[float, float]:
+    """Inverse de lonlat_to_global_px : pixel absolu -> (lon, lat)."""
+    from detection_ortho.tiles import pixel_to_lonlat
+    x, px = divmod(gx, tile_size)
+    y, py = divmod(gy, tile_size)
+    return pixel_to_lonlat(int(x), int(y), zoom, px, py, tile_size)

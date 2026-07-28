@@ -69,3 +69,22 @@ Regénérer seulement le fichier MapRoulette depuis les candidats :
 
 **Aucun upload automatique** : importez `maproulette_challenge.geojson`
 vous-même dans l'interface MapRoulette.
+
+## Itération 2 — Hard-negative mining
+
+À partir de `verdicts.csv` (revue de la carte, cf. `make_map.py`) :
+
+1. Régénérer le dataset augmenté (négatifs durs + positifs de revue) :
+
+       python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 \
+           --verdicts verdicts.csv --out dataset
+
+2. Réentraîner :
+
+       python scripts/train.py --data dataset/data.yaml --epochs 100 --device cpu
+
+3. Re-inférer Tours Métropole avec les nouveaux poids (cf. Jalon 3), puis
+   mesurer le gain avant/après :
+
+       python scripts/compare_to_verdicts.py \
+           --detections inference_out/detected_only.geojson --verdicts verdicts.csv

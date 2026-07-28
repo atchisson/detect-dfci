@@ -33,7 +33,8 @@ def main() -> None:
     fc = json.loads(args.input.read_text(encoding="utf-8"))
     points = []
     for feat in fc.get("features", []):
-        lon, lat = feat["geometry"]["coordinates"]
+        coords = feat["geometry"]["coordinates"]
+        lon, lat = coords[0], coords[1]
         points.append({"lon": lon, "lat": lat,
                        "score": feat.get("properties", {}).get("score")})
     write_geojson(to_maproulette_tasks(points, args.instruction), args.out)

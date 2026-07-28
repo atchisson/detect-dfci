@@ -18,9 +18,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import cv2
 import requests
 from shapely.geometry import Point
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 try:
     from tqdm import tqdm
@@ -29,7 +32,9 @@ except ImportError:
         return it
 
 from detection_ortho.osm import fetch_relation_ways, fetch_citernes
-from detection_ortho.infer import ways_to_polygon, windows_over_polygon, boxes_to_points
+from detection_ortho.infer import (
+    ways_to_polygon, windows_over_polygon, boxes_to_points, result_to_boxes,
+)
 from detection_ortho.dataset import assemble_window, window_tiles
 from detection_ortho.tiles import download_tile
 from detection_ortho.geo import dedup_points
@@ -43,11 +48,11 @@ INSTRUCTION = ("Une citerne semble présente ici sur l'ortho IGN. "
                "Vérifiez et ajoutez-la à OSM si confirmé.")
 
 
-def fetch_retry(fn, *a, tries=5, pause=6.0):
+def fetch_retry(fn, *a, tries=5, pause=6.0, **kw):
     last = None
     for i in range(tries):
         try:
-            return fn(*a)
+            return fn(*a, **kw)
         except Exception as exc:  # noqa: BLE001
             last = exc
             print(f"  Overpass retry {i + 1}/{tries} ({exc})", file=sys.stderr)
@@ -77,10 +82,14 @@ def main() -> None:
     args = ap.parse_args()
 
     cache = args.out / "tiles_cache"
+    session = requests.Session()
 
     # --- A. Emprise ---
     print(f"Récupération de l'emprise « {args.boundary} »...")
-    ways = fetch_retry(fetch_relation_ways, args.boundary)
+    ways = fetch_retry(fetch_relation_ways, args.boundary, session)
+    if not ways:
+        sys.exit(f"Aucune relation OSM « {args.boundary} » trouvée — "
+                  f"vérifiez le nom exact.")
     polygon = ways_to_polygon(ways)
     west, south, east, north = polygon.bounds
     print(f"Emprise: bbox=({west:.4f},{south:.4f},{east:.4f},{north:.4f})")
@@ -94,7 +103,6 @@ def main() -> None:
         tiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
         needed.update(tiles)
     print(f"{len(needed)} tuile(s) à récupérer (parallèle x{args.workers})...")
-    session = requests.Session()
 
     def _dl(xy):
         try:
@@ -105,9 +113,14 @@ def main() -> None:
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futs = [pool.submit(_dl, xy) for xy in needed]
-        for _ in tqdm(as_completed(futs), total=len(futs),
-                      desc="Récupération des tuiles", unit="tuile"):
-            pass
+        n_fail = 0
+        for fut in tqdm(as_completed(futs), total=len(futs),
+                        desc="Récupération des tuiles", unit="tuile"):
+            if fut.result() is not None:
+                n_fail += 1
+        if n_fail:
+            print(f"  {n_fail} tuile(s) en échec au pré-téléchargement "
+                  f"(réessayées à l'assemblage).", file=sys.stderr)
 
     # --- B/C. Inférence + post-traitement ---
     from ultralytics import YOLO
@@ -120,10 +133,7 @@ def main() -> None:
             print(f"  fenêtre ({lon:.5f},{lat:.5f}) échec ({exc})", file=sys.stderr)
             continue
         res = model.predict(img, conf=args.conf, device=args.device, verbose=False)[0]
-        boxes = []
-        for b in res.boxes:
-            cx, cy = float(b.xywh[0][0]), float(b.xywh[0][1])
-            boxes.append((cx, cy, float(b.conf[0])))
+        boxes = result_to_boxes(res.boxes)
         detections.extend(boxes_to_points(boxes, ogx, ogy, ZOOM))
 
     detections = dedup_points(detections, radius_m=args.dedup)
@@ -131,7 +141,7 @@ def main() -> None:
     write_geojson(points_to_geojson(detections), args.out / "detections.geojson")
 
     # --- D. Citernes OSM de la zone (filtrées au polygone) ---
-    osm = fetch_retry(fetch_citernes, west, south, east, north)
+    osm = fetch_retry(fetch_citernes, west, south, east, north, session)
     osm = [o for o in osm if polygon.contains(Point(o["lon"], o["lat"]))]
     print(f"{len(osm)} citerne(s) OSM dans l'emprise.")
 
@@ -147,6 +157,37 @@ def main() -> None:
     # --- F. MapRoulette (fichier uniquement) ---
     write_geojson(to_maproulette_tasks(res["detected_only"], INSTRUCTION),
                   args.out / "maproulette_challenge.geojson")
+
+    # Overlay d'inspection (best-effort, ne bloque jamais le run).
+    try:
+        fig, ax = plt.subplots(figsize=(10, 10))
+        exterior = getattr(polygon, "exterior", None)
+        if exterior is None and hasattr(polygon, "geoms"):
+            exterior = getattr(polygon.geoms[0], "exterior", None)
+        if exterior is not None:
+            xs, ys = exterior.xy
+            ax.plot(xs, ys, color="black", linewidth=0.8, label="emprise")
+        else:
+            bw, bs, be, bn = polygon.bounds
+            ax.plot([bw, be, be, bw, bw], [bs, bs, bn, bn, bs],
+                    color="black", linewidth=0.8, label="emprise")
+
+        def _scatter(items, **kw):
+            if items:
+                ax.scatter([p["lon"] for p in items], [p["lat"] for p in items],
+                           s=8, **kw)
+
+        _scatter([m["detection"] for m in res["matched"]], color="green", label="∩ OSM")
+        _scatter(res["detected_only"], color="blue", label="candidats (∉ OSM)")
+        _scatter(res["osm_only"], color="red", label="OSM non détectées")
+        ax.set_aspect("equal")
+        ax.legend()
+        ax.set_title("Détections vs OSM")
+        fig.savefig(args.out / "overlay.png", dpi=120, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Overlay: {args.out / 'overlay.png'}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  overlay non généré ({exc})", file=sys.stderr)
 
     n_match = len(res["matched"])
     rappel = n_match / len(osm) if osm else float("nan")

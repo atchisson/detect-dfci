@@ -47,6 +47,17 @@ def windows_over_polygon(
     return centers
 
 
+def result_to_boxes(boxes) -> list[tuple[float, float, float]]:
+    """Extrait (cx, cy, score) de chaque boîte d'un résultat Ultralytics.
+
+    `boxes` = itérable d'objets exposant .xywh (Nx4, [cx,cy,w,h]) et .conf.
+    """
+    out = []
+    for b in boxes:
+        out.append((float(b.xywh[0][0]), float(b.xywh[0][1]), float(b.conf[0])))
+    return out
+
+
 def boxes_to_points(
     boxes: list[tuple[float, float, float]],
     origin_gx: float, origin_gy: float, zoom: int,

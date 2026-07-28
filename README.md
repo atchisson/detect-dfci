@@ -59,7 +59,8 @@ Inférer sur une emprise (relation OSM), comparer à OSM, générer le challenge
         --weights runs/detect/runs/citernes/weights/best.pt --conf 0.4 --out inference_out
 
 Livrables dans `inference_out/` : `detections.geojson`, `matched/detected_only/
-osm_only.geojson`, et `maproulette_challenge.geojson`.
+osm_only.geojson`, `maproulette_challenge.geojson`, et `overlay.png` (aperçu
+visuel emprise + détections vs OSM, généré en best-effort).
 
 Regénérer seulement le fichier MapRoulette depuis les candidats :
 

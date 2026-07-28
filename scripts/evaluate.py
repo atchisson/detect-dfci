@@ -51,9 +51,10 @@ def main() -> None:
     # Prédictions annotées sur le test (inspection visuelle, ex. rejet piscines).
     imgs = _test_images_dir(args.data)
     if imgs.exists():
+        out = args.out.resolve()  # absolu : évite l'imbrication sous runs/detect
         model.predict(source=str(imgs), device=args.device, save=True,
-                      project=str(args.out), name="test_preds", exist_ok=True)
-        print(f"\nPrédictions annotées : {args.out / 'test_preds'}")
+                      project=str(out), name="test_preds", exist_ok=True)
+        print(f"\nPrédictions annotées : {out / 'test_preds'}")
 
 
 if __name__ == "__main__":

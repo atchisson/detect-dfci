@@ -32,13 +32,16 @@ def main() -> None:
 
     from ultralytics import YOLO
 
+    # Chemin absolu : Ultralytics résout un `project` relatif sous son propre
+    # runs_dir (runs/detect), d'où l'imbrication runs/detect/runs/... à éviter.
+    project = str(Path(args.project).resolve())
     model = YOLO(args.model)  # poids COCO pré-entraînés
     model.train(
         data=args.data, epochs=args.epochs, imgsz=args.imgsz,
         batch=args.batch, device=args.device,
-        project=args.project, name=args.name, pretrained=True,
+        project=project, name=args.name, pretrained=True,
     )
-    print(f"Entraînement terminé. Poids : {args.project}/{args.name}/weights/best.pt")
+    print(f"Entraînement terminé. Poids : {project}/{args.name}/weights/best.pt")
 
 
 if __name__ == "__main__":

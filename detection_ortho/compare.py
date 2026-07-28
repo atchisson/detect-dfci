@@ -39,3 +39,32 @@ def match_detections(
 
     osm_only = [osm for i, osm in enumerate(osm_points) if i not in used_osm]
     return {"matched": matched, "detected_only": detected_only, "osm_only": osm_only}
+
+
+def compare_to_verdicts(
+    detections: list[dict], verdicts: list[dict], radius_m: float
+) -> dict:
+    """Croise de nouvelles détections avec des verdicts connus (par proximité).
+
+    Mesure le gain avant/après : combien de faux positifs connus ne sont plus
+    détectés (fp_suppressed) et combien de vrais positifs restent détectés
+    (tp_kept).
+    """
+    def detected(pt: dict) -> bool:
+        return any(
+            haversine_m(pt["lon"], pt["lat"], d["lon"], d["lat"]) <= radius_m
+            for d in detections
+        )
+
+    faux = [v for v in verdicts if v.get("verdict") == "faux"]
+    vrai = [v for v in verdicts if v.get("verdict") == "vrai"]
+    fp_still = sum(1 for v in faux if detected(v))
+    tp_kept = sum(1 for v in vrai if detected(v))
+    return {
+        "fp_total": len(faux),
+        "fp_still_detected": fp_still,
+        "fp_suppressed": len(faux) - fp_still,
+        "tp_total": len(vrai),
+        "tp_kept": tp_kept,
+        "n_candidates_new": len(detections),
+    }

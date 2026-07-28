@@ -121,10 +121,15 @@ def fetch_features_geom(
 
 
 def build_boundary_query(name: str) -> str:
-    """Requête Overpass : relation administrative `name` avec géométrie."""
+    """Requête Overpass : relation-frontière `name` avec géométrie.
+
+    On matche la PRÉSENCE d'un tag `boundary` (quelle que soit sa valeur) : les
+    communes sont `boundary=administrative` mais les EPCI/métropoles utilisent
+    `boundary=local_authority`. Cela évite d'exclure Tours Métropole.
+    """
     return (
         f'[out:json][timeout:180];\n'
-        f'relation["name"="{name}"]["boundary"="administrative"];\n'
+        f'relation["name"="{name}"]["boundary"];\n'
         f'out geom;'
     )
 

@@ -7,7 +7,7 @@ def test_boundary_query_targets_relation_with_geom():
     q = build_boundary_query("Tours Métropole Val de Loire")
     assert 'relation' in q
     assert '"name"="Tours Métropole Val de Loire"' in q
-    assert '"boundary"="administrative"' in q
+    assert '"boundary"' in q  # présence du tag (couvre administrative ET local_authority)
     assert "out geom;" in q
 
 

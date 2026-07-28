@@ -29,6 +29,7 @@ from detection_ortho.osm import fetch_features_geom
 from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
     write_chip, split_indices, write_data_yaml, window_tiles,
+    fixed_box_geo, DEFAULT_BOX_M, parse_verdicts,
 )
 from detection_ortho.tiles import download_tile
 
@@ -77,6 +78,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--exclude", type=int, nargs="*", default=[],
                     help="indices de positifs à écarter (intrus repérés au QA)")
+    ap.add_argument("--verdicts", type=Path, default=None,
+                    help="CSV de revue : faux -> négatifs durs, vrai -> positifs")
     ap.add_argument("--out", type=Path, default=Path("dataset"))
     args = ap.parse_args()
 
@@ -115,6 +118,20 @@ def main() -> None:
         lon = rng.uniform(west, east)
         lat = rng.uniform(south, north)
         records.append((f"bg_{i:04d}", lon, lat, None))
+
+    # --- Chips issus de la revue (hard-negative mining) ---
+    if args.verdicts:
+        vs = parse_verdicts(args.verdicts.read_text(encoding="utf-8").splitlines())
+        n_hard = n_rev = 0
+        for v in vs:
+            if v["verdict"] == "faux":
+                records.append((f"hardneg_{n_hard:04d}", v["lon"], v["lat"], None))
+                n_hard += 1
+            else:  # vrai
+                bbox = fixed_box_geo(v["lon"], v["lat"], DEFAULT_BOX_M)
+                records.append((f"revpos_{n_rev:04d}", v["lon"], v["lat"], bbox))
+                n_rev += 1
+        print(f"Verdicts ingérés : {n_hard} négatif(s) dur(s), {n_rev} positif(s).")
 
     # --- Récupération des images : pré-téléchargement parallèle des tuiles (dédupliquées) ---
     needed = set()

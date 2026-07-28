@@ -45,3 +45,18 @@ def windows_over_polygon(
             gx += step
         gy += step
     return centers
+
+
+def boxes_to_points(
+    boxes: list[tuple[float, float, float]],
+    origin_gx: float, origin_gy: float, zoom: int,
+) -> list[dict]:
+    """Convertit des centres de boîtes (px dans la fenêtre) + score en points géo.
+
+    origin_gx/origin_gy : pixel absolu du coin haut-gauche de la fenêtre.
+    """
+    points: list[dict] = []
+    for cx, cy, score in boxes:
+        lon, lat = global_px_to_lonlat(origin_gx + cx, origin_gy + cy, zoom)
+        points.append({"lon": lon, "lat": lat, "score": float(score)})
+    return points

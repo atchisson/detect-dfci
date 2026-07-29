@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from shapely.geometry import LineString, Point
 from shapely.ops import linemerge, polygonize, unary_union
+from shapely.prepared import prep
 
 from detection_ortho.dataset import lonlat_to_global_px, global_px_to_lonlat
 
@@ -35,12 +36,13 @@ def windows_over_polygon(
     gx1, gy1 = lonlat_to_global_px(east, south, zoom, tile_size)  # coin SE
     step = max(1, int(window_px * (1.0 - overlap)))
     centers: list[tuple[float, float]] = []
+    prepared = prep(polygon)
     gy = gy0
     while gy <= gy1:
         gx = gx0
         while gx <= gx1:
             lon, lat = global_px_to_lonlat(gx, gy, zoom, tile_size)
-            if polygon.contains(Point(lon, lat)):
+            if prepared.contains(Point(lon, lat)):
                 centers.append((lon, lat))
             gx += step
         gy += step

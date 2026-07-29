@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
-from affine import Affine
+from rasterio import Affine
 from rasterio.enums import Resampling
 from rasterio.vrt import WarpedVRT
 from rasterio.windows import Window

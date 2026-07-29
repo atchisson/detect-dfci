@@ -117,6 +117,9 @@ Par défaut le venv est en CPU. Pour utiliser la P620 :
         --weights runs/citernes/weights/best.pt --ortho ortho37.vrt \
         --conf 0.55 --device 0 --out inference_dept37
 
-Repli CPU : `--device cpu`. Livrables identiques au Jalon 3
-(detections/detected_only/... + maproulette_challenge.geojson + overlay.png),
-en lecture 100 % locale.
+Si PyTorch CUDA n'est pas installé, utiliser `--device cpu` : il n'y a **pas
+de repli automatique** — un `--device 0` sans CUDA disponible échoue (erreur
+PyTorch), il faut explicitement repasser en CPU. Livrables identiques au
+Jalon 3 (detections/detected_only/... + maproulette_challenge.geojson +
+overlay.png), avec **imagerie** 100 % locale (l'emprise et les citernes de
+référence restent récupérées via OSM/Overpass).

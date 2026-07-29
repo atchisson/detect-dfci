@@ -56,7 +56,7 @@ Ou via docker compose :
 Inférer sur une emprise (relation OSM), comparer à OSM, générer le challenge :
 
     python scripts/infer_area.py --boundary "Tours Métropole Val de Loire" \
-        --weights runs/detect/runs/citernes/weights/best.pt --conf 0.4 --out inference_out
+        --weights runs/citernes/weights/best.pt --conf 0.4 --out inference_out
 
 Livrables dans `inference_out/` : `detections.geojson`, `matched/detected_only/
 osm_only.geojson`, `maproulette_challenge.geojson`, et `overlay.png` (aperçu

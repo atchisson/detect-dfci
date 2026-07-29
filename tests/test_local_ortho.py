@@ -52,3 +52,12 @@ def test_read_window_outside_data_is_black(tmp_path):
         vrt.close()
     assert img.shape == (640, 640, 3)
     assert int(img.sum()) == 0
+
+
+def test_close_releases_source_file(tmp_path):
+    tif = tmp_path / "ortho.tif"
+    _make_ortho(tif, 0.65, 47.33)
+    vrt = open_ortho(tif, zoom=19)
+    read_window(vrt, 0.65, 47.33, 19, 640)
+    vrt.close()
+    assert vrt.src_dataset.closed  # la source est bien fermée

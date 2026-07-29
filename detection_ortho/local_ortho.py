@@ -60,10 +60,24 @@ def open_ortho(path, zoom: int = 19, tile_size: int = 256) -> WarpedVRT:
     n = tile_size * (2 ** zoom)  # dimension monde en pixels (virtuel)
     transform = Affine(mpp, 0.0, -math.pi * _R, 0.0, -mpp, math.pi * _R)
     src = rasterio.open(_source_path(path))
-    return WarpedVRT(
+    vrt = WarpedVRT(
         src, crs="EPSG:3857", transform=transform, width=n, height=n,
         resampling=Resampling.bilinear,
     )
+    # WarpedVRT.close() ne ferme pas le dataset source qu'il enveloppe : sans
+    # ce correctif, le fichier/handle source reste ouvert (fuite) même après
+    # que l'appelant a fermé le VRT comme le docstring le lui promet.
+    _orig_close = vrt.close
+
+    def _close_all(*args, **kwargs):
+        try:
+            _orig_close(*args, **kwargs)
+        finally:
+            if not src.closed:
+                src.close()
+
+    vrt.close = _close_all
+    return vrt
 
 
 def read_window(

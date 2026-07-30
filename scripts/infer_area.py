@@ -30,6 +30,7 @@ from detection_ortho.infer import (
     ways_to_polygon, windows_over_polygon, boxes_to_points, result_to_boxes,
 )
 from detection_ortho.dataset import assemble_window, window_tiles
+from detection_ortho.local_ortho import open_ortho, read_window
 from detection_ortho.tiles import download_tile
 from detection_ortho.geo import dedup_points
 from detection_ortho.compare import match_detections
@@ -85,6 +86,9 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--device", type=str, default="cpu")
     ap.add_argument("--out", type=Path, default=Path("inference_out"))
+    ap.add_argument("--ortho", type=str, default=None,
+                    help="chemin BD ORTHO locale (raster/VRT/dossier de dalles) ; "
+                         "si fourni, lecture locale au lieu du WMTS")
     args = ap.parse_args()
 
     cache = args.out / "tiles_cache"
@@ -103,44 +107,56 @@ def main() -> None:
     centers = windows_over_polygon(polygon, ZOOM, WINDOW, args.overlap)
     print(f"{len(centers)} fenêtre(s) d'inférence.")
 
-    # --- Pré-téléchargement parallèle des tuiles ---
-    needed = set()
-    for lon, lat in centers:
-        tiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
-        needed.update(tiles)
-    print(f"{len(needed)} tuile(s) à récupérer (parallèle x{args.workers})...")
+    # --- Pré-téléchargement parallèle des tuiles (uniquement en mode WMTS) ---
+    ortho_vrt = None
+    if args.ortho:
+        ortho_vrt = open_ortho(args.ortho, zoom=ZOOM)
+        print(f"Ortho locale : {args.ortho} (lecture rasterio, pas de WMTS).")
+    else:
+        needed = set()
+        for lon, lat in centers:
+            tiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
+            needed.update(tiles)
+        print(f"{len(needed)} tuile(s) à récupérer (parallèle x{args.workers})...")
 
-    def _dl(xy):
-        try:
-            download_tile(xy[0], xy[1], ZOOM, cache, session=session)
-        except Exception as exc:  # noqa: BLE001
-            return exc
-        return None
+        def _dl(xy):
+            try:
+                download_tile(xy[0], xy[1], ZOOM, cache, session=session)
+            except Exception as exc:  # noqa: BLE001
+                return exc
+            return None
 
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futs = [pool.submit(_dl, xy) for xy in needed]
-        n_fail = 0
-        for fut in progress(as_completed(futs), len(futs),
-                            "Récupération des tuiles"):
-            if fut.result() is not None:
-                n_fail += 1
-        if n_fail:
-            print(f"  {n_fail} tuile(s) en échec au pré-téléchargement "
-                  f"(réessayées à l'assemblage).", file=sys.stderr)
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futs = [pool.submit(_dl, xy) for xy in needed]
+            n_fail = 0
+            for fut in progress(as_completed(futs), len(futs),
+                                "Récupération des tuiles"):
+                if fut.result() is not None:
+                    n_fail += 1
+            if n_fail:
+                print(f"  {n_fail} tuile(s) en échec au pré-téléchargement "
+                      f"(réessayées à l'assemblage).", file=sys.stderr)
 
     # --- B/C. Inférence + post-traitement ---
     from ultralytics import YOLO
     model = YOLO(args.weights)
     detections: list[dict] = []
-    for lon, lat in progress(centers, len(centers), "Inférence"):
-        try:
-            img, ogx, ogy = assemble_window(lon, lat, ZOOM, WINDOW, cache)
-        except Exception as exc:  # noqa: BLE001
-            print(f"  fenêtre ({lon:.5f},{lat:.5f}) échec ({exc})", file=sys.stderr)
-            continue
-        res = model.predict(img, conf=args.conf, device=args.device, verbose=False)[0]
-        boxes = result_to_boxes(res.boxes)
-        detections.extend(boxes_to_points(boxes, ogx, ogy, ZOOM))
+    try:
+        for lon, lat in progress(centers, len(centers), "Inférence"):
+            try:
+                if ortho_vrt is not None:
+                    img, ogx, ogy = read_window(ortho_vrt, lon, lat, ZOOM, WINDOW)
+                else:
+                    img, ogx, ogy = assemble_window(lon, lat, ZOOM, WINDOW, cache)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  fenêtre ({lon:.5f},{lat:.5f}) échec ({exc})", file=sys.stderr)
+                continue
+            res = model.predict(img, conf=args.conf, device=args.device, verbose=False)[0]
+            boxes = result_to_boxes(res.boxes)
+            detections.extend(boxes_to_points(boxes, ogx, ogy, ZOOM))
+    finally:
+        if ortho_vrt is not None:
+            ortho_vrt.close()
 
     detections = dedup_points(detections, radius_m=args.dedup)
     print(f"{len(detections)} détection(s) après dédoublonnage.")

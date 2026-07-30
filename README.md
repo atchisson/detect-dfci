@@ -93,3 +93,33 @@ vous-même dans l'interface MapRoulette.
 directement** d'une itération à l'autre — ajouter `--verdicts` change
 `len(records)`, ce qui recompose le split 70/15/15. Le vrai gain se lit via
 `compare_to_verdicts.py` (ré-inférence sur la même emprise).
+
+## Échelle départementale (BD ORTHO locale + GPU)
+
+### 1. Récupérer la BD ORTHO du département
+Télécharger la **BD ORTHO 20 cm RVB Lambert-93** du département depuis
+cartes.gouv.fr (jeu IGNF_BD-ORTHO), décompresser les dalles `.jp2` dans un
+dossier. Construire un mosaïque virtuelle (une fois) :
+
+    gdalbuildvrt ortho37.vrt chemin/vers/dalles/*.jp2
+
+(ou QGIS → Raster → Divers → Construire un raster virtuel).
+
+### 2. (Optionnel) GPU : installer PyTorch CUDA pour la Quadro P620
+Par défaut le venv est en CPU. Pour utiliser la P620 :
+
+    .venv\Scripts\python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+    .venv\Scripts\python -c "import torch; print(torch.cuda.is_available())"   # True attendu
+
+### 3. Inférer sur le département (lecture locale, GPU)
+
+    python scripts/infer_area.py --boundary "Indre-et-Loire" \
+        --weights runs/citernes/weights/best.pt --ortho ortho37.vrt \
+        --conf 0.55 --device 0 --out inference_dept37
+
+Si PyTorch CUDA n'est pas installé, utiliser `--device cpu` : il n'y a **pas
+de repli automatique** — un `--device 0` sans CUDA disponible échoue (erreur
+PyTorch), il faut explicitement repasser en CPU. Livrables identiques au
+Jalon 3 (detections/detected_only/... + maproulette_challenge.geojson +
+overlay.png), avec **imagerie** 100 % locale (l'emprise et les citernes de
+référence restent récupérées via OSM/Overpass).

@@ -14,3 +14,4 @@ def test_infer_area_help_runs():
     assert "ModuleNotFoundError" not in r.stderr
     assert "--boundary" in r.stdout
     assert "--conf" in r.stdout
+    assert "--ortho" in r.stdout

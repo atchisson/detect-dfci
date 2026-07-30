@@ -9,3 +9,6 @@ runs/
 out/
 dataset/
 inference_out/
+BDORTHO_*/
+*.jp2
+*.vrt

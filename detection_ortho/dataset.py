@@ -13,7 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from detection_ortho.tiles import lonlat_to_pixel, download_tile
+from detection_ortho.tiles import lonlat_to_pixel, download_tile, LAYER
 
 _M_PER_DEG_LAT = 111320.0
 
@@ -101,7 +101,7 @@ def window_tiles(
 
 def assemble_window(
     center_lon: float, center_lat: float, zoom: int, window_px: int,
-    cache_dir, session=None, tile_size: int = 256,
+    cache_dir, session=None, tile_size: int = 256, layer=LAYER,
 ) -> tuple[np.ndarray, float, float]:
     """Assemble une mosaïque de tuiles et en extrait la fenêtre centrée."""
     tiles, origin_gx, origin_gy = window_tiles(
@@ -113,7 +113,7 @@ def assemble_window(
     mosaic_w = (max(xs) - tx_min + 1) * tile_size
     mosaic = np.zeros((mosaic_h, mosaic_w, 3), np.uint8)
     for (x, y) in tiles:
-        path = download_tile(x, y, zoom, cache_dir, session=session)
+        path = download_tile(x, y, zoom, cache_dir, session=session, layer=layer)
         tile = cv2.imread(str(path))
         if tile is None:
             print(f"  tuile illisible: {path}", file=sys.stderr)
@@ -217,4 +217,15 @@ def parse_verdicts(lines: list[str]) -> list[dict]:
             out.append({"lon": float(lon), "lat": float(lat), "verdict": verdict})
         except ValueError:
             continue
+    return out
+
+
+def compose_rgn(rgb_bgr, irc_bgr):
+    """Image BGR où le bleu est remplacé par le NIR (= canal rouge de l'IRC).
+
+    Donne un proxy 3 canaux [R, G, NIR] pour tester l'apport du NIR sans
+    plomberie 4-canaux.
+    """
+    out = rgb_bgr.copy()
+    out[:, :, 0] = irc_bgr[:, :, 2]
     return out

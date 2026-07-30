@@ -14,6 +14,7 @@ from pyproj import Transformer
 
 WMTS_BASE = "https://data.geopf.fr/wmts"
 LAYER = "ORTHOIMAGERY.ORTHOPHOTOS"
+LAYER_IRC = "ORTHOIMAGERY.ORTHOPHOTOS.IRC"  # composite CIR : bande 1 = NIR
 
 # On s'identifie sur les appels HTTP avec l'URL du dépôt.
 USER_AGENT = "detect-dfci/0.1 (+https://github.com/atchisson/detect-dfci)"
@@ -28,10 +29,10 @@ def tile_for_lonlat(lon: float, lat: float, zoom: int) -> tuple[int, int]:
     return t.x, t.y
 
 
-def tile_url(x: int, y: int, zoom: int) -> str:
+def tile_url(x: int, y: int, zoom: int, layer: str = LAYER) -> str:
     return (
         f"{WMTS_BASE}?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
-        f"&LAYER={LAYER}&STYLE=normal&TILEMATRIXSET=PM"
+        f"&LAYER={layer}&STYLE=normal&TILEMATRIXSET=PM"
         f"&TILEMATRIX={zoom}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg"
     )
 
@@ -76,17 +77,18 @@ def tiles_in_bbox(
 
 
 def download_tile(
-    x: int, y: int, zoom: int, cache_dir: Path, session=None
+    x: int, y: int, zoom: int, cache_dir: Path, session=None, layer: str = LAYER
 ) -> Path:
-    """Télécharge la tuile (x, y, zoom) si absente du cache, retourne son chemin."""
+    """Télécharge la tuile (x, y, zoom) de la couche `layer` si absente du cache."""
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    path = cache_dir / f"{zoom}_{x}_{y}.jpg"
+    tag = "" if layer == LAYER else "_" + layer.rsplit(".", 1)[-1].lower()
+    path = cache_dir / f"{zoom}_{x}_{y}{tag}.jpg"
     if path.exists():
         return path
     sess = session or requests.Session()
     resp = sess.get(
-        tile_url(x, y, zoom),
+        tile_url(x, y, zoom, layer),
         headers={"User-Agent": USER_AGENT},
         timeout=30,
     )

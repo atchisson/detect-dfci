@@ -136,3 +136,17 @@ PyTorch), il faut explicitement repasser en CPU. Livrables identiques au
 Jalon 3 (detections/detected_only/... + maproulette_challenge.geojson +
 overlay.png), avec **imagerie** 100 % locale (l'emprise et les citernes de
 référence restent récupérées via OSM/Overpass).
+
+## Test de valeur NIR (proxy [R,G,NIR])
+
+Mesurer si le proche-infrarouge aide, sans plomberie 4-canaux : on remplace le
+bleu par le NIR (canal rouge de la couche IRC WMTS).
+
+    python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 \
+        --verdicts verdicts.csv --nir --out dataset_nir
+    python scripts/train.py --data dataset_nir/data.yaml --epochs 100 --device cpu --name citernes_nir
+    python scripts/evaluate.py --weights runs/citernes_nir/weights/best.pt \
+        --data dataset_nir/data.yaml
+
+Comparer le mAP@50 / la matrice de confusion au modèle RVB (mAP 0,83). Si le
+gain est net, investir dans un vrai modèle 4 canaux (RGB+NIR) au pivot natif.

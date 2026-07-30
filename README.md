@@ -109,6 +109,15 @@ même travail :
 
     python scripts/build_ortho_vrt.py --dir chemin/vers/dalles --out ortho37.vrt
 
+### 1bis. Pré-reprojeter en GeoTIFF tuilé 3857 (perf — une seule fois)
+La lecture directe des dalles JP2 (reprojection par fenêtre) est trop lente à
+l'échelle départementale (~2,4 s/fenêtre). On pré-reprojette **une fois** en un
+GeoTIFF tuilé Web-Mercator aligné sur la grille du modèle :
+
+    python scripts/build_cog.py --src ortho37.vrt --out ortho37_3857.tif
+
+(quelques heures, une seule fois). Ensuite les lectures fenêtrées sont rapides.
+
 ### 2. (Optionnel) GPU : installer PyTorch CUDA pour la Quadro P620
 Par défaut le venv est en CPU. Pour utiliser la P620 :
 
@@ -118,7 +127,7 @@ Par défaut le venv est en CPU. Pour utiliser la P620 :
 ### 3. Inférer sur le département (lecture locale, GPU)
 
     python scripts/infer_area.py --boundary "Indre-et-Loire" \
-        --weights runs/citernes/weights/best.pt --ortho ortho37.vrt \
+        --weights runs/citernes/weights/best.pt --ortho ortho37_3857.tif \
         --conf 0.55 --device 0 --out inference_dept37
 
 Si PyTorch CUDA n'est pas installé, utiliser `--device cpu` : il n'y a **pas

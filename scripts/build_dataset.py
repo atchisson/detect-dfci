@@ -29,9 +29,9 @@ from detection_ortho.osm import fetch_features_geom
 from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
     write_chip, split_indices, write_data_yaml, window_tiles,
-    fixed_box_geo, DEFAULT_BOX_M, parse_verdicts,
+    fixed_box_geo, DEFAULT_BOX_M, parse_verdicts, compose_rgn,
 )
-from detection_ortho.tiles import download_tile
+from detection_ortho.tiles import download_tile, LAYER_IRC
 
 
 def progress(iterable, total, label):
@@ -80,6 +80,8 @@ def main() -> None:
                     help="indices de positifs à écarter (intrus repérés au QA)")
     ap.add_argument("--verdicts", type=Path, default=None,
                     help="CSV de revue : faux -> négatifs durs, vrai -> positifs")
+    ap.add_argument("--nir", action="store_true",
+                    help="imagettes [R,G,NIR] (bleu remplacé par le NIR de l'IRC)")
     ap.add_argument("--out", type=Path, default=Path("dataset"))
     args = ap.parse_args()
 
@@ -182,6 +184,10 @@ def main() -> None:
         part = where[i]
         try:
             win_img, ogx, ogy = assemble_window(lon, lat, ZOOM, WINDOW, cache)
+            if args.nir:
+                irc_img, _, _ = assemble_window(
+                    lon, lat, ZOOM, WINDOW, cache, layer=LAYER_IRC)
+                win_img = compose_rgn(win_img, irc_img)
         except Exception as exc:  # noqa: BLE001
             print(f"  {name}: échec fenêtre ({exc})", file=sys.stderr)
             continue

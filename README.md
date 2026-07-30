@@ -103,7 +103,11 @@ dossier. Construire un mosaïque virtuelle (une fois) :
 
     gdalbuildvrt ortho37.vrt chemin/vers/dalles/*.jp2
 
-(ou QGIS → Raster → Divers → Construire un raster virtuel).
+(ou QGIS → Raster → Divers → Construire un raster virtuel). Si `gdalbuildvrt`
+n'est pas installé, un script maison ne dépendant que de rasterio fait le
+même travail :
+
+    python scripts/build_ortho_vrt.py --dir chemin/vers/dalles --out ortho37.vrt
 
 ### 2. (Optionnel) GPU : installer PyTorch CUDA pour la Quadro P620
 Par défaut le venv est en CPU. Pour utiliser la P620 :

@@ -144,8 +144,8 @@ bleu par le NIR (canal rouge de la couche IRC WMTS).
 
     python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 \
         --verdicts verdicts.csv --nir --out dataset_nir
-    python scripts/train.py --data dataset_nir/data.yaml --epochs 100 --device cpu
-    python scripts/evaluate.py --weights runs/citernes/weights/best.pt \
+    python scripts/train.py --data dataset_nir/data.yaml --epochs 100 --device cpu --name citernes_nir
+    python scripts/evaluate.py --weights runs/citernes_nir/weights/best.pt \
         --data dataset_nir/data.yaml
 
 Comparer le mAP@50 / la matrice de confusion au modèle RVB (mAP 0,83). Si le

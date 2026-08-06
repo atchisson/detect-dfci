@@ -181,6 +181,13 @@ def main() -> None:
             cell_deg=args.cell_deg, seed=args.seed)
     else:
         split = split_indices(len(records), seed=args.seed)
+
+    # Warn if any partition is empty while records exist
+    for part in ("train", "val", "test"):
+        if not split[part] and records:
+            print(f"  ⚠ lot '{part}' vide (split trop grossier ? augmente la zone "
+                  f"ou baisse --cell-deg)", file=sys.stderr)
+
     where = {}
     for part, idxs in split.items():
         for i in idxs:

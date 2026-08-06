@@ -175,6 +175,39 @@ def split_indices(
     }
 
 
+def spatial_split_indices(
+    points, cell_deg: float = 0.05, seed: int = 0,
+    ratios: tuple[float, float, float] = (0.7, 0.15, 0.15),
+) -> dict:
+    """Partition spatiale : les points d'une même cellule de grille restent groupés.
+
+    `points` = liste de (lon, lat) alignée sur les indices 0..n-1. Les cellules
+    (floor(lon/cell_deg), floor(lat/cell_deg)) sont mélangées de façon
+    déterministe puis affectées à train→val→test par cellules entières jusqu'à
+    approcher `ratios` (comptés en nombre de points).
+    """
+    cells: dict = {}
+    for i, (lon, lat) in enumerate(points):
+        key = (math.floor(lon / cell_deg), math.floor(lat / cell_deg))
+        cells.setdefault(key, []).append(i)
+    keys = sorted(cells)
+    random.Random(seed).shuffle(keys)
+    total = len(points)
+    t_train, t_val = total * ratios[0], total * ratios[1]
+    train, val, test = [], [], []
+    count = 0
+    for k in keys:
+        members = cells[k]
+        if count < t_train:
+            train += members
+        elif count < t_train + t_val:
+            val += members
+        else:
+            test += members
+        count += len(members)
+    return {"train": sorted(train), "val": sorted(val), "test": sorted(test)}
+
+
 def write_data_yaml(root, path) -> None:
     """Écrit un data.yaml Ultralytics (1 classe) pointant vers root."""
     root = Path(root).resolve()

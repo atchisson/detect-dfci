@@ -28,8 +28,8 @@ import requests
 from detection_ortho.osm import fetch_features_geom
 from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
-    write_chip, split_indices, write_data_yaml, window_tiles,
-    fixed_box_geo, DEFAULT_BOX_M, parse_verdicts, compose_rgn,
+    write_chip, split_indices, spatial_split_indices, write_data_yaml,
+    window_tiles, fixed_box_geo, DEFAULT_BOX_M, parse_verdicts, compose_rgn,
 )
 from detection_ortho.tiles import download_tile, LAYER_IRC
 
@@ -82,6 +82,10 @@ def main() -> None:
                     help="CSV de revue : faux -> négatifs durs, vrai -> positifs")
     ap.add_argument("--nir", action="store_true",
                     help="imagettes [R,G,NIR] (bleu remplacé par le NIR de l'IRC)")
+    ap.add_argument("--spatial-split", action="store_true",
+                    help="split géographique par cellule (au lieu d'aléatoire)")
+    ap.add_argument("--cell-deg", type=float, default=0.05,
+                    help="taille de cellule du split spatial, en degrés")
     ap.add_argument("--out", type=Path, default=Path("dataset"))
     args = ap.parse_args()
 
@@ -171,7 +175,19 @@ def main() -> None:
     shutil.rmtree(lbls, ignore_errors=True)
 
     # --- Split et génération des chips (assemblées depuis le cache) ---
-    split = split_indices(len(records), seed=args.seed)
+    if args.spatial_split:
+        split = spatial_split_indices(
+            [(lon, lat) for _n, lon, lat, _b in records],
+            cell_deg=args.cell_deg, seed=args.seed)
+    else:
+        split = split_indices(len(records), seed=args.seed)
+
+    # Warn if any partition is empty while records exist
+    for part in ("train", "val", "test"):
+        if not split[part] and records:
+            print(f"  ⚠ lot '{part}' vide (split trop grossier ? augmente la zone "
+                  f"ou baisse --cell-deg)", file=sys.stderr)
+
     where = {}
     for part, idxs in split.items():
         for i in idxs:

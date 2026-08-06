@@ -82,3 +82,12 @@ def is_detected_near(det_points, lon: float, lat: float, radius_m: float) -> boo
         haversine_m(lon, lat, p["lon"], p["lat"]) <= radius_m
         for p in det_points
     )
+
+
+def max_score_near(det_points, lon: float, lat: float, radius_m: float) -> float:
+    """Meilleur score de détection à <= radius_m du centre (lon, lat), sinon 0.0."""
+    scores = [
+        p["score"] for p in det_points
+        if haversine_m(lon, lat, p["lon"], p["lat"]) <= radius_m
+    ]
+    return max(scores) if scores else 0.0

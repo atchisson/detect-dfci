@@ -64,3 +64,61 @@ def test_nir_eval_composes_and_tallies(tmp_path, monkeypatch, capsys):
     # le point faux est encore détecté (le stub tire) -> 0 supprimé sur 1
     out = capsys.readouterr().out
     assert "Faux positifs supprimés        : 0/1" in out
+
+
+def test_rgb_path_no_nir_composition(tmp_path, monkeypatch, capsys):
+    lon, lat = 0.65, 47.33
+    cache = tmp_path / "cache"
+    _seed(cache, lon, lat, "", 100)  # RVB seulement, pas d'IRC
+
+    verdicts = tmp_path / "v.csv"
+    verdicts.write_text(f"index,lat,lon,score,verdict\n1,{lat},{lon},0.9,faux\n",
+                        encoding="utf-8")
+
+    seen = []
+
+    class FakeYOLO:
+        def __init__(self, weights):
+            pass
+
+        def predict(self, img, conf=0.25, device="cpu", verbose=False):
+            seen.append(img)
+            return [_Res([_Box(320.0, 320.0, 0.9)])]  # tire au centre de la fenêtre
+
+    monkeypatch.setattr(eval_points, "YOLO", FakeYOLO)
+    monkeypatch.setattr(sys, "argv", [
+        "eval_points.py", "--weights", "x.pt", "--verdicts", str(verdicts),
+        "--conf", "0.55", "--cache", str(cache)])
+    eval_points.main()
+
+    # sans --nir : pas de composition, le bleu reste celui de la tuile RVB (100)
+    assert seen and int(seen[0][:, :, 0].mean()) < 150
+    out = capsys.readouterr().out
+    assert "Faux positifs supprimés        : 0/1" in out
+
+
+def test_silent_model_suppresses(tmp_path, monkeypatch, capsys):
+    lon, lat = 0.65, 47.33
+    cache = tmp_path / "cache"
+    _seed(cache, lon, lat, "", 100)  # RVB seulement
+
+    verdicts = tmp_path / "v.csv"
+    verdicts.write_text(f"index,lat,lon,score,verdict\n1,{lat},{lon},0.9,faux\n",
+                        encoding="utf-8")
+
+    class FakeYOLO:
+        def __init__(self, weights):
+            pass
+
+        def predict(self, img, conf=0.25, device="cpu", verbose=False):
+            return [_Res([])]  # le modèle ne tire pas
+
+    monkeypatch.setattr(eval_points, "YOLO", FakeYOLO)
+    monkeypatch.setattr(sys, "argv", [
+        "eval_points.py", "--weights", "x.pt", "--verdicts", str(verdicts),
+        "--conf", "0.55", "--cache", str(cache)])
+    eval_points.main()
+
+    # le faux n'est plus détecté -> supprimé
+    out = capsys.readouterr().out
+    assert "Faux positifs supprimés        : 1/1" in out

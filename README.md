@@ -154,11 +154,11 @@ gain est net, investir dans un vrai modèle 4 canaux (RGB+NIR) au pivot natif.
 ## Test terrain NIR (aux points de verdict)
 
 Juger le NIR sur des données réelles labellisées (`verdicts.csv`) plutôt que sur
-le mAP de test. On évalue chaque modèle aux 44 points connus et on compare
+le mAP de test. On évalue chaque modèle aux points labellisés connus et on compare
 combien de faux positifs chacun supprime, à vrais conservés égaux.
 
     python scripts/eval_points.py --weights runs/citernes/weights/best.pt \
-        --verdicts verdicts.csv --conf 0.55            # RVB (garde-fou ~20/32 FP, 12/12 vrais)
+        --verdicts verdicts.csv --conf 0.55            # RVB (garde-fou : supprime la grande majorité des faux, garde ~tous les vrais)
     python scripts/eval_points.py --weights runs/citernes_nir/weights/best.pt \
         --verdicts verdicts.csv --conf 0.55 --nir      # NIR
 

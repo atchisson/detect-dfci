@@ -165,3 +165,26 @@ combien de faux positifs chacun supprime, à vrais conservés égaux.
 Le NIR est concluant s'il supprime strictement plus de faux positifs que le RVB
 en conservant au moins autant de vrais. Sinon, le pivot natif se fera en 3
 canaux RVB (perf seule).
+
+## Diagnostic de précision (split spatial + calibration de seuil)
+
+Le mAP de test (0,84) est optimiste (split aléatoire → fuite géographique). Pour
+un vrai chiffre de généralisation, régénérer le dataset avec un **split spatial**
+(zones disjointes), puis ré-entraîner et évaluer :
+
+    python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 \
+        --verdicts verdicts.csv --spatial-split --out dataset_spatial
+    python scripts/train.py --data dataset_spatial/data.yaml --epochs 100 \
+        --device cpu --name citernes_spatial
+    python scripts/evaluate.py --weights runs/citernes_spatial/weights/best.pt \
+        --data dataset_spatial/data.yaml
+
+Pour verrouiller le seuil de confiance (gain de précision immédiat), balayer sur
+les points labellisés :
+
+    python scripts/sweep_threshold.py --weights runs/citernes/weights/best.pt \
+        --verdicts verdicts.csv
+
+La table précision/rappel vs seuil donne le point de fonctionnement à utiliser
+pour le run départemental. Pour catégoriser les faux positifs, ouvrir
+`scripts/make_map.py` sur les points de `verdicts.csv`.

@@ -68,3 +68,19 @@ def compare_to_verdicts(
         "tp_kept": tp_kept,
         "n_candidates_new": len(detections),
     }
+
+
+def sweep_precision_recall(scored, thresholds) -> list:
+    """Précision/rappel par seuil. `scored` = liste de (best_score, is_true).
+
+    Un point « tire » à un seuil si best_score >= seuil.
+    """
+    n_true = sum(1 for _s, t in scored if t)
+    rows = []
+    for th in thresholds:
+        tp = sum(1 for s, t in scored if t and s >= th)
+        fp = sum(1 for s, t in scored if (not t) and s >= th)
+        prec = tp / (tp + fp) if (tp + fp) else 0.0
+        rec = tp / n_true if n_true else 0.0
+        rows.append({"conf": th, "precision": prec, "recall": rec, "tp": tp, "fp": fp})
+    return rows

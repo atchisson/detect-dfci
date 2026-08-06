@@ -46,8 +46,6 @@ def test_sweep_prints_table(tmp_path, monkeypatch, capsys):
         f"2,{faux[1]},{faux[0]},0.4,faux\n",
         encoding="utf-8")
 
-    score_by_lon = {round(vrai[0], 4): 0.9, round(faux[0], 4): 0.4}
-
     class FakeYOLO:
         def __init__(self, weights):
             pass
@@ -68,3 +66,11 @@ def test_sweep_prints_table(tmp_path, monkeypatch, capsys):
     # à seuil 0.5 : le vrai (0.9) tire, le faux (0.4) non -> précision 1.0, rappel 1.0
     assert "0.50" in out or "0.5" in out
     assert "précision" in out.lower() or "precision" in out.lower()
+
+    # vérifie les valeurs de la ligne du seuil 0.50 : précision=1.000,
+    # rappel=1.000, tp=1, fp=0 (format exact du script).
+    lines = [line for line in out.splitlines() if line.strip().startswith("0.50")]
+    assert lines, "ligne du seuil 0.50 introuvable dans la sortie"
+    line_050 = lines[0]
+    assert line_050.count("1.000") == 2  # précision et rappel
+    assert line_050.rstrip().endswith("1    0")  # tp=1 fp=0

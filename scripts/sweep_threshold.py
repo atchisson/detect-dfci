@@ -66,8 +66,11 @@ def main() -> None:
                        v.get("verdict") == "vrai"))
         print(f"  {i}/{len(verdicts)}", end="\r", file=sys.stderr, flush=True)
 
-    n = int(round((args.conf_max - args.conf_min) / args.step)) + 1
-    thresholds = [round(args.conf_min + k * args.step, 4) for k in range(max(n, 1))]
+    thresholds = []
+    t = args.conf_min
+    while t <= args.conf_max + 1e-9:
+        thresholds.append(round(t, 4))
+        t += args.step
     rows = sweep_precision_recall(scored, thresholds)
     print("\n=== Précision/rappel vs seuil ===")
     print("  seuil  précision  rappel   tp   fp")

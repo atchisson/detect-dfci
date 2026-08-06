@@ -8,6 +8,7 @@ from shapely.ops import linemerge, polygonize, unary_union
 from shapely.prepared import prep
 
 from detection_ortho.dataset import lonlat_to_global_px, global_px_to_lonlat
+from detection_ortho.geo import haversine_m
 
 
 def ways_to_polygon(ways: list[list[dict]]):
@@ -73,3 +74,11 @@ def boxes_to_points(
         lon, lat = global_px_to_lonlat(origin_gx + cx, origin_gy + cy, zoom)
         points.append({"lon": lon, "lat": lat, "score": float(score)})
     return points
+
+
+def is_detected_near(det_points, lon: float, lat: float, radius_m: float) -> bool:
+    """Vrai si une détection tombe à <= radius_m du centre (lon, lat)."""
+    return any(
+        haversine_m(lon, lat, p["lon"], p["lat"]) <= radius_m
+        for p in det_points
+    )

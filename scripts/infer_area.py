@@ -38,15 +38,26 @@ from detection_ortho.geojson_io import points_to_geojson, write_geojson
 from detection_ortho.maproulette import to_maproulette_tasks
 
 
-def progress(iterable, total, label):
-    """Affiche l'avancement en texte clair sur stdout (fiable partout, ex.
-    PowerShell, contrairement aux barres tqdm sur stderr). ~1 ligne / 2%."""
+def progress(iterable, total, label, min_interval=20.0):
+    """Affiche l'avancement avec temps écoulé + ETA sur stdout (fiable partout,
+    ex. PowerShell, contrairement aux barres tqdm sur stderr).
+
+    Imprime au plus une ligne toutes `min_interval` secondes (et la dernière),
+    pour rester lisible sur un run long de plusieurs centaines de milliers de
+    fenêtres (l'ancienne version tous les 2 % restait muette trop longtemps)."""
     total = int(total or 0)
-    step = max(1, total // 50) if total else 1000
+    t0 = time.perf_counter()
+    last = t0
     for i, item in enumerate(iterable, 1):
-        if i % step == 0 or i == total:
+        now = time.perf_counter()
+        if now - last >= min_interval or i == total:
+            el = now - t0
+            rate = i / el if el > 0 else 0
+            eta = (total - i) / rate if rate > 0 else 0
             pct = f" ({i * 100 // total}%)" if total else ""
-            print(f"  {label}: {i}/{total}{pct}", flush=True)
+            print(f"  {label}: {i}/{total}{pct} — écoulé {el / 60:.1f} min, "
+                  f"ETA {eta / 60:.1f} min", flush=True)
+            last = now
         yield item
 
 ZOOM = 19

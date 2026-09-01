@@ -38,13 +38,16 @@ from detection_ortho.geojson_io import points_to_geojson, write_geojson
 from detection_ortho.maproulette import to_maproulette_tasks
 
 
-def progress(iterable, total, label, min_interval=20.0):
+def progress(iterable, total, label, min_interval=20.0, status=None):
     """Affiche l'avancement avec temps écoulé + ETA sur stdout (fiable partout,
     ex. PowerShell, contrairement aux barres tqdm sur stderr).
 
     Imprime au plus une ligne toutes `min_interval` secondes (et la dernière),
     pour rester lisible sur un run long de plusieurs centaines de milliers de
-    fenêtres (l'ancienne version tous les 2 % restait muette trop longtemps)."""
+    fenêtres (l'ancienne version tous les 2 % restait muette trop longtemps).
+
+    `status` : callable optionnel renvoyant un texte à ajouter en fin de ligne
+    (ex. le nombre de détections en direct)."""
     total = int(total or 0)
     t0 = time.perf_counter()
     last = t0
@@ -55,8 +58,9 @@ def progress(iterable, total, label, min_interval=20.0):
             rate = i / el if el > 0 else 0
             eta = (total - i) / rate if rate > 0 else 0
             pct = f" ({i * 100 // total}%)" if total else ""
+            extra = f" — {status()}" if status else ""
             print(f"  {label}: {i}/{total}{pct} — écoulé {el / 60:.1f} min, "
-                  f"ETA {eta / 60:.1f} min", flush=True)
+                  f"ETA {eta / 60:.1f} min{extra}", flush=True)
             last = now
         yield item
 
@@ -153,7 +157,8 @@ def main() -> None:
     model = YOLO(args.weights)
     detections: list[dict] = []
     try:
-        for lon, lat in progress(centers, len(centers), "Inférence"):
+        for lon, lat in progress(centers, len(centers), "Inférence",
+                                  status=lambda: f"{len(detections)} détection(s)"):
             try:
                 if ortho_vrt is not None:
                     img, ogx, ogy = read_window(ortho_vrt, lon, lat, ZOOM, WINDOW)

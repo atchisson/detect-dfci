@@ -19,6 +19,21 @@ def test_progress_prints_eta(capsys):
     assert "3/3 (100%)" in printed  # dernière ligne toujours imprimée
 
 
+def test_progress_appends_status(capsys):
+    # status() est appelé à chaque impression et ajouté en fin de ligne
+    seen = {"n": 0}
+
+    def status():
+        seen["n"] += 1
+        return f"{seen['n']} détection(s)"
+
+    list(infer_area.progress(iter(range(3)), 3, "Inférence", min_interval=0,
+                             status=status))
+    out = capsys.readouterr().out
+    assert "détection(s)" in out
+    assert out.rstrip().endswith("détection(s)")
+
+
 def test_progress_quiet_when_interval_large(capsys):
     # intervalle géant -> seule la dernière ligne (i == total) s'imprime
     list(infer_area.progress(iter(range(4)), 4, "X", min_interval=10_000))

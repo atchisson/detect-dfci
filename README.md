@@ -109,14 +109,23 @@ même travail :
 
     python scripts/build_ortho_vrt.py --dir chemin/vers/dalles --out ortho37.vrt
 
-### 1bis. Pré-reprojeter en GeoTIFF tuilé 3857 (perf — une seule fois)
+### 1bis. Pré-reprojeter en tuiles 3857 (perf — une seule fois)
 La lecture directe des dalles JP2 (reprojection par fenêtre) est trop lente à
-l'échelle départementale (~2,4 s/fenêtre). On pré-reprojette **une fois** en un
-GeoTIFF tuilé Web-Mercator aligné sur la grille du modèle :
+l'échelle départementale (~2,4 s/fenêtre). On pré-reprojette **une fois** chaque
+dalle en un GeoTIFF Web-Mercator aligné sur la grille du modèle, **en parallèle**,
+puis on assemble une VRT que l'inférence lit vite (~3 ms/fenêtre) :
 
-    python scripts/build_cog.py --src ortho37.vrt --out ortho37_3857.tif
+    python scripts/build_cog_tiles.py \
+        --src BDORTHO_2-0_RVB-0M20_JP2-E080_LAMB93_D037_2025-01-01 \
+        --out-dir cog_tiles --workers 6
 
-(quelques heures, une seule fois). Ensuite les lectures fenêtrées sont rapides.
+(quelques heures, une seule fois ; reprise auto si interrompu). Produit
+`cog_tiles/mosaic.vrt`, à passer à `infer_area.py --ortho`.
+
+> ⚠️ **NE PAS** faire `build_cog.py --src <une VRT>` : `build_cog` traiterait la
+> mosaïque comme un seul raster et tenterait de la charger entière en RAM →
+> sortie **noire**. Toujours pointer sur des **dalles** (dossier). `build_cog.py`
+> reste utile pour reprojeter une **seule** dalle en un fichier unique.
 
 ### 2. (Optionnel) GPU : installer PyTorch CUDA pour la Quadro P620
 Par défaut le venv est en CPU. Pour utiliser la P620 :
@@ -127,7 +136,7 @@ Par défaut le venv est en CPU. Pour utiliser la P620 :
 ### 3. Inférer sur le département (lecture locale, GPU)
 
     python scripts/infer_area.py --boundary "Indre-et-Loire" \
-        --weights runs/citernes/weights/best.pt --ortho ortho37_3857.tif \
+        --weights runs/citernes/weights/best.pt --ortho cog_tiles/mosaic.vrt \
         --conf 0.55 --device 0 --out inference_dept37
 
 Si PyTorch CUDA n'est pas installé, utiliser `--device cpu` : il n'y a **pas

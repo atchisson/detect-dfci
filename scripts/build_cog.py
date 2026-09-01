@@ -68,6 +68,15 @@ def main() -> None:
     nbands = None
     for f in files:
         with rasterio.open(f) as d:
+            # Garde-fou : une source énorme = une mosaïque/VRT passée par erreur.
+            # `d.read()` la chargerait entière en RAM -> échec -> sortie noire
+            # (le bug historique de `--src ortho37.vrt`). Reprojeter les dalles
+            # individuelles, ou utiliser build_cog_tiles.py (parallèle).
+            if d.width * d.height * d.count > 8_000_000_000:
+                raise SystemExit(
+                    f"Source trop grande ({d.width}x{d.height}x{d.count}) : "
+                    f"c'est une mosaïque/VRT, pas une dalle. Passez le DOSSIER "
+                    f"de dalles (ou scripts/build_cog_tiles.py).")
             nbands = nbands or d.count
             b = transform_bounds(d.crs, "EPSG:3857", *d.bounds, densify_pts=21)
         minx, miny = min(minx, b[0]), min(miny, b[1])

@@ -156,6 +156,8 @@ def main() -> None:
     from ultralytics import YOLO
     model = YOLO(args.weights)
     detections: list[dict] = []
+    live_path = args.out / "detections_live.geojson"  # aperçu au fil de l'eau
+    last_flush = time.perf_counter()
     try:
         for lon, lat in progress(centers, len(centers), "Inférence",
                                   status=lambda: f"{len(detections)} détection(s)"):
@@ -170,6 +172,10 @@ def main() -> None:
             res = model.predict(img, conf=args.conf, device=args.device, verbose=False)[0]
             boxes = result_to_boxes(res.boxes)
             detections.extend(boxes_to_points(boxes, ogx, ogy, ZOOM))
+            now = time.perf_counter()
+            if now - last_flush >= 30.0:  # flush périodique pour la carte live
+                write_geojson(points_to_geojson(detections), live_path)
+                last_flush = now
     finally:
         if ortho_vrt is not None:
             ortho_vrt.close()
@@ -177,6 +183,7 @@ def main() -> None:
     detections = dedup_points(detections, radius_m=args.dedup)
     print(f"{len(detections)} détection(s) après dédoublonnage.")
     write_geojson(points_to_geojson(detections), args.out / "detections.geojson")
+    live_path.unlink(missing_ok=True)  # aperçu remplacé par les livrables finaux
 
     # --- D. Citernes OSM de la zone (filtrées au polygone) ---
     osm = fetch_retry(fetch_citernes, west, south, east, north, session)

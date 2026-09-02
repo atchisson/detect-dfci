@@ -20,6 +20,9 @@ LAYERS = [
     ("detected_only", "#1e63ff", "Candidat (∉ OSM)", True),
     ("matched", "#1faa4b", "Confirmée (∩ OSM)", False),
     ("osm_only", "#e21c1c", "OSM non détectée", False),
+    # Présent seulement PENDANT l'inférence (détections brutes, avant comparaison
+    # OSM) : permet de suivre le run en direct. Supprimé à la fin.
+    ("detections_live", "#ff8c00", "Détection (live, brute)", False),
 ]
 
 HTML = r"""<!doctype html>

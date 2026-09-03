@@ -32,6 +32,9 @@ from detection_ortho.infer import (
 from detection_ortho.dataset import assemble_window, window_tiles
 from detection_ortho.local_ortho import open_ortho, read_window
 from detection_ortho.tiles import download_tile
+from detection_ortho.tilecache import (
+    DEFAULT_TILE_BYTES, max_tiles_for_budget, next_chunk, purge_cache,
+)
 from detection_ortho.geo import dedup_points
 from detection_ortho.compare import match_detections
 from detection_ortho.geojson_io import points_to_geojson, write_geojson
@@ -70,6 +73,49 @@ INSTRUCTION = ("Une citerne semble présente ici sur l'ortho IGN. "
                "Vérifiez et ajoutez-la à OSM si confirmé.")
 
 
+def download_ok(xy, cache, session):
+    """Télécharge une tuile ; retourne None si OK, l'exception sinon."""
+    try:
+        download_tile(xy[0], xy[1], ZOOM, cache, session=session)
+    except Exception as exc:  # noqa: BLE001
+        return exc
+    return None
+
+
+def stream_windows(centers, cache, budget_bytes, pool, session):
+    """Égrène les fenêtres en gardant le cache de tuiles sous `budget_bytes`.
+
+    Découpe `centers` en tranches (cf. `tilecache`) : on attend les tuiles de la
+    tranche courante, on lance en fond celles de la suivante, on égrène les
+    fenêtres, puis on purge tout ce qui ne sert plus. Le disque ne contient donc
+    jamais plus de deux tranches, et le téléchargement se recouvre avec
+    l'inférence au lieu de la précéder.
+    """
+    tile_bytes = DEFAULT_TILE_BYTES
+    max_tiles = max_tiles_for_budget(budget_bytes, tile_bytes)
+    chunk, tiles, i = next_chunk(centers, 0, ZOOM, WINDOW, max_tiles)
+    futs = [pool.submit(download_ok, xy, cache, session) for xy in tiles]
+    while chunk:
+        n_fail = sum(1 for f in futs if f.result() is not None)
+        if n_fail:
+            print(f"  {n_fail} tuile(s) en échec (réessayées à l'assemblage).",
+                  file=sys.stderr)
+        # Tranche suivante lancée en fond pendant l'inférence de la courante.
+        nxt, nxt_tiles, i = next_chunk(centers, i, ZOOM, WINDOW, max_tiles)
+        futs = [pool.submit(download_ok, xy, cache, session)
+                for xy in nxt_tiles - tiles]
+
+        yield from chunk
+
+        deleted, kept, kept_bytes = purge_cache(cache, nxt_tiles, ZOOM)
+        if kept:  # la taille observée remplace l'estimation initiale
+            tile_bytes = kept_bytes / kept
+            max_tiles = max_tiles_for_budget(budget_bytes, tile_bytes)
+        print(f"  cache: {kept} tuile(s) / {kept_bytes / 1e9:.2f} Go "
+              f"({deleted} purgée(s))", flush=True)
+        chunk, tiles = nxt, nxt_tiles
+
+
 def fetch_retry(fn, *a, tries=5, pause=6.0, **kw):
     last = None
     for i in range(tries):
@@ -104,6 +150,10 @@ def main() -> None:
     ap.add_argument("--ortho", type=str, default=None,
                     help="chemin BD ORTHO locale (raster/VRT/dossier de dalles) ; "
                          "si fourni, lecture locale au lieu du WMTS")
+    ap.add_argument("--cache-gb", type=float, default=10.0,
+                    help="plafond disque du cache de tuiles WMTS, en Go : les "
+                         "tuiles sont téléchargées par tranches puis purgées "
+                         "(0 = tout pré-télécharger, cache non borné)")
     args = ap.parse_args()
 
     cache = args.out / "tiles_cache"
@@ -122,27 +172,31 @@ def main() -> None:
     centers = windows_over_polygon(polygon, ZOOM, WINDOW, args.overlap)
     print(f"{len(centers)} fenêtre(s) d'inférence.")
 
-    # --- Pré-téléchargement parallèle des tuiles (uniquement en mode WMTS) ---
+    # --- Approvisionnement en imagerie ---
     ortho_vrt = None
+    tile_pool = None
+    windows = centers  # itérable des fenêtres à inférer
     if args.ortho:
         ortho_vrt = open_ortho(args.ortho, zoom=ZOOM)
         print(f"Ortho locale : {args.ortho} (lecture rasterio, pas de WMTS).")
+    elif args.cache_gb > 0:
+        # Streaming : téléchargement par tranches + purge, cache disque borné.
+        tile_pool = ThreadPoolExecutor(max_workers=args.workers)
+        windows = stream_windows(centers, cache, args.cache_gb * 1e9,
+                                 tile_pool, session)
+        print(f"WMTS en streaming : cache plafonné à {args.cache_gb:g} Go "
+              f"(téléchargement par tranches x{args.workers}, purge au fil de "
+              f"l'eau).")
     else:
+        # Pré-téléchargement intégral (cache non borné, réutilisable).
         needed = set()
         for lon, lat in centers:
             tiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
             needed.update(tiles)
         print(f"{len(needed)} tuile(s) à récupérer (parallèle x{args.workers})...")
 
-        def _dl(xy):
-            try:
-                download_tile(xy[0], xy[1], ZOOM, cache, session=session)
-            except Exception as exc:  # noqa: BLE001
-                return exc
-            return None
-
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            futs = [pool.submit(_dl, xy) for xy in needed]
+            futs = [pool.submit(download_ok, xy, cache, session) for xy in needed]
             n_fail = 0
             for fut in progress(as_completed(futs), len(futs),
                                 "Récupération des tuiles"):
@@ -159,7 +213,7 @@ def main() -> None:
     live_path = args.out / "detections_live.geojson"  # aperçu au fil de l'eau
     last_flush = time.perf_counter()
     try:
-        for lon, lat in progress(centers, len(centers), "Inférence",
+        for lon, lat in progress(windows, len(centers), "Inférence",
                                   status=lambda: f"{len(detections)} détection(s)"):
             try:
                 if ortho_vrt is not None:
@@ -179,6 +233,8 @@ def main() -> None:
     finally:
         if ortho_vrt is not None:
             ortho_vrt.close()
+        if tile_pool is not None:
+            tile_pool.shutdown(cancel_futures=True)
 
     detections = dedup_points(detections, radius_m=args.dedup)
     print(f"{len(detections)} détection(s) après dédoublonnage.")

@@ -155,7 +155,7 @@ se lit en streaming via le WMTS.
 
 **Mise en place (une fois) :**
 
-    py -3.12 -m venv .venv
+    py -3.12 -m venv .venv   # 3.13 fonctionne aussi
     .venv\Scripts\python -m pip install -r requirements.txt
 
 **Pour chaque département `NN` (nom OSM `"<Département>"`) :**
@@ -170,9 +170,15 @@ se lit en streaming via le WMTS.
 
      Vérifier que la mosaïque n'est pas noire avant de lancer l'inférence
      (lire une fenêtre sur une citerne connue).
-   - *WMTS streaming (aucun disque, plus lent)* : ne pas passer `--ortho` ;
-     `infer_area` télécharge les tuiles à la volée (vider le cache entre deux
-     départements). Le WMTS IGN n'est pas soumis à limite d'usage.
+   - *WMTS streaming (rien à télécharger à la main)* : ne pas passer `--ortho` ;
+     `infer_area` récupère les tuiles lui-même. Par défaut le cache disque est
+     **plafonné à 10 Go** (`--cache-gb`) : les tuiles sont téléchargées par
+     tranches en parallèle pendant que l'inférence tourne, puis purgées dès
+     qu'elles ne servent plus, et le cache est vidé en fin de run. Un
+     département entier demanderait sinon ~21 Go d'un coup (2,7 M tuiles à
+     ~7,8 ko), pré-téléchargées avant de commencer. `--cache-gb 0` rétablit ce
+     pré-téléchargement intégral (cache non borné, réutilisable d'un run à
+     l'autre). Le WMTS IGN n'est pas soumis à limite d'usage.
 
 2. **Inférence** (ajouter `--ortho cog_tilesNN/mosaic.vrt` si option locale) :
 

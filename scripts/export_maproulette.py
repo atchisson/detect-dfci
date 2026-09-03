@@ -28,17 +28,24 @@ def main() -> None:
                     help="GeoJSON de points candidats (detected_only.geojson)")
     ap.add_argument("--out", type=Path, default=Path("maproulette_challenge.geojson"))
     ap.add_argument("--instruction", type=str, default=INSTRUCTION)
+    ap.add_argument("--min-score", type=float, default=0.0,
+                    help="ne garder que les points de score >= ce seuil "
+                         "(qualité du challenge ; ex. 0.7)")
     args = ap.parse_args()
 
     fc = json.loads(args.input.read_text(encoding="utf-8"))
-    points = []
+    points, skipped = [], 0
     for feat in fc.get("features", []):
         coords = feat["geometry"]["coordinates"]
         lon, lat = coords[0], coords[1]
-        points.append({"lon": lon, "lat": lat,
-                       "score": feat.get("properties", {}).get("score")})
+        score = feat.get("properties", {}).get("score")
+        if args.min_score > 0.0 and (score is None or score < args.min_score):
+            skipped += 1
+            continue
+        points.append({"lon": lon, "lat": lat, "score": score})
     write_geojson(to_maproulette_tasks(points, args.instruction), args.out)
-    print(f"{len(points)} tâche(s) écrites dans {args.out}. "
+    print(f"{len(points)} tâche(s) écrites dans {args.out} "
+          f"(seuil {args.min_score}, {skipped} écartée(s)). "
           f"À importer manuellement dans MapRoulette.")
 
 

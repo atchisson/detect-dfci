@@ -136,7 +136,7 @@ Par défaut le venv est en CPU. Pour utiliser la P620 :
 ### 3. Inférer sur le département (lecture locale, GPU)
 
     python scripts/infer_area.py --boundary "Indre-et-Loire" \
-        --weights runs/citernes/weights/best.pt --ortho cog_tiles/mosaic.vrt \
+        --weights models/citernes-yolov8n.pt --ortho cog_tiles/mosaic.vrt \
         --conf 0.55 --device 0 --out inference_dept37
 
 Si PyTorch CUDA n'est pas installé, utiliser `--device cpu` : il n'y a **pas
@@ -145,6 +145,54 @@ PyTorch), il faut explicitement repasser en CPU. Livrables identiques au
 Jalon 3 (detections/detected_only/... + maproulette_challenge.geojson +
 overlay.png), avec **imagerie** 100 % locale (l'emprise et les citernes de
 référence restent récupérées via OSM/Overpass).
+
+## Reproduire sur un autre PC — tous les départements
+
+Tout le nécessaire est dans le dépôt : le code, les scripts, **et le modèle
+entraîné** (`models/citernes-yolov8n.pt`, YOLOv8n, ~6 Mo). Seule la BD ORTHO
+n'est pas versionnée (trop volumineuse) — elle se télécharge par département, ou
+se lit en streaming via le WMTS.
+
+**Mise en place (une fois) :**
+
+    py -3.12 -m venv .venv
+    .venv\Scripts\python -m pip install -r requirements.txt
+
+**Pour chaque département `NN` (nom OSM `"<Département>"`) :**
+
+1. **Imagerie** — deux options :
+   - *Locale (rapide, ~2,4 To pour toute la France)* : télécharger la BD ORTHO
+     20 cm RVB Lambert-93 du département sur cartes.gouv.fr, décompresser les
+     `.jp2`, puis pré-reprojeter en parallèle (une fois par département) :
+
+         python scripts/build_cog_tiles.py --src <dossier_dalles_NN> \
+             --out-dir cog_tilesNN --workers 6
+
+     Vérifier que la mosaïque n'est pas noire avant de lancer l'inférence
+     (lire une fenêtre sur une citerne connue).
+   - *WMTS streaming (aucun disque, plus lent)* : ne pas passer `--ortho` ;
+     `infer_area` télécharge les tuiles à la volée (vider le cache entre deux
+     départements). Le WMTS IGN n'est pas soumis à limite d'usage.
+
+2. **Inférence** (ajouter `--ortho cog_tilesNN/mosaic.vrt` si option locale) :
+
+       python scripts/infer_area.py --boundary "<Département>" \
+           --weights models/citernes-yolov8n.pt --conf 0.40 \
+           --device cpu --out inferenceNN
+
+3. **Challenge MapRoulette** — filtrer au seuil de qualité (≥0.7 ≈ 88 % de
+   précision sur le 37) plutôt que tout publier :
+
+       python scripts/export_maproulette.py \
+           --input inferenceNN/detected_only.geojson \
+           --out inferenceNN/challenge_NN.geojson --min-score 0.7
+
+   (Import manuel dans MapRoulette — aucun upload automatique.) Pour réviser à
+   la main d'abord : `python scripts/make_map.py --dir inferenceNN`.
+
+> Le modèle a été entraîné sur le 37 : il excelle sur la **bâche souple
+> turquoise** mais rate les types atypiques (grands bassins, cuves rondes). Pour
+> le national, envisager un ré-entraînement sur des exemples plus divers.
 
 ## Test de valeur NIR (proxy [R,G,NIR])
 

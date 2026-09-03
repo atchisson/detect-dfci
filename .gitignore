@@ -4,11 +4,17 @@ __pycache__/
 venv/
 tiles_cache/
 *.pt
+!models/citernes-yolov8n.pt
 datasets/
 runs/
 out/
 dataset/
+dataset_*/
 inference_out/
+inference*/
+cog_tiles*/
 BDORTHO_*/
 *.jp2
 *.vrt
+*_3857.tif
+verdicts*.csv

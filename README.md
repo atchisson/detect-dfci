@@ -186,6 +186,19 @@ se lit en streaming via le WMTS.
            --weights models/citernes-yolov8n.pt --conf 0.40 \
            --device cpu --out inferenceNN
 
+   Compter ~19 h en CPU pour un département (mesuré sur le 49 : 669 245
+   fenêtres à 103 ms). Rediriger la sortie dans un journal, puis suivre
+   l'avancement depuis un autre terminal :
+
+       .\scripts\avancement.ps1 -Log <journal>
+
+   (L'ETA imprimé par `infer_area` reste faussé par la mise en route ; ce script
+   recalcule le débit sur les dernières lignes seulement.)
+
+   > Sous Git Bash, un `--boundary` accentué est **corrompu dans `argv`**
+   > (« Métropole » → « M?tropole ») et la relation OSM reste introuvable.
+   > Lancer depuis PowerShell.
+
 3. **Challenge MapRoulette** — filtrer au seuil de qualité (≥0.7 ≈ 88 % de
    précision sur le 37) plutôt que tout publier :
 

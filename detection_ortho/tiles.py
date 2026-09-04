@@ -5,6 +5,7 @@ schéma slippy-map standard : TILEMATRIX=zoom, TILECOL=x, TILEROW=y.
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import cv2
@@ -77,9 +78,16 @@ def tiles_in_bbox(
 
 
 def download_tile(
-    x: int, y: int, zoom: int, cache_dir: Path, session=None, layer: str = LAYER
+    x: int, y: int, zoom: int, cache_dir: Path, session=None, layer: str = LAYER,
+    tries: int = 3, pause: float = 1.0,
 ) -> Path:
-    """Télécharge la tuile (x, y, zoom) de la couche `layer` si absente du cache."""
+    """Télécharge la tuile (x, y, zoom) de la couche `layer` si absente du cache.
+
+    Réessaie `tries` fois (attente croissante) : à l'échelle départementale le
+    WMTS renvoie sporadiquement des erreurs passagères — y compris des 404 sur
+    des tuiles qui existent bel et bien — et un seul échec fait sauter toute la
+    fenêtre d'inférence, donc une zone aveugle d'une centaine de mètres.
+    """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     tag = "" if layer == LAYER else "_" + layer.rsplit(".", 1)[-1].lower()
@@ -87,14 +95,22 @@ def download_tile(
     if path.exists():
         return path
     sess = session or requests.Session()
-    resp = sess.get(
-        tile_url(x, y, zoom, layer),
-        headers={"User-Agent": USER_AGENT},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    path.write_bytes(resp.content)
-    return path
+    last: Exception | None = None
+    for attempt in range(max(1, tries)):
+        try:
+            resp = sess.get(
+                tile_url(x, y, zoom, layer),
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            path.write_bytes(resp.content)
+            return path
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            if attempt + 1 < max(1, tries):
+                time.sleep(pause * (attempt + 1))
+    raise last
 
 
 def save_tile_with_marker(

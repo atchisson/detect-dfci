@@ -190,10 +190,13 @@ se lit en streaming via le WMTS.
    fenêtres à 103 ms). Rediriger la sortie dans un journal, puis suivre
    l'avancement depuis un autre terminal :
 
-       .\scripts\avancement.ps1 -Log <journal>
+       .\scripts\avancement.ps1 -Log <journal>           # une ligne, ponctuel
+       .\scripts\avancement.ps1 -Log <journal> -Watch    # rafraîchie sur place
 
    (L'ETA imprimé par `infer_area` reste faussé par la mise en route ; ce script
-   recalcule le débit sur les dernières lignes seulement.)
+   recalcule le débit sur les dernières lignes seulement. En mode `-Watch` la
+   ligne est réécrite toutes les 30 s — `-Interval` pour changer — et la boucle
+   s'arrête d'elle-même à la fin du run.)
 
    > Sous Git Bash, un `--boundary` accentué est **corrompu dans `argv`**
    > (« Métropole » → « M?tropole ») et la relation OSM reste introuvable.

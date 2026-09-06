@@ -202,6 +202,22 @@ se lit en streaming via le WMTS.
    > (« Métropole » → « M?tropole ») et la relation OSM reste introuvable.
    > Lancer depuis PowerShell.
 
+   **Mettre en pause et reprendre.** Un run départemental dure une nuit ; on peut
+   l'interrompre sans perdre le travail fait. Déposer un fichier `STOP` dans le
+   dossier de sortie (ou faire `Ctrl+C` si le run est au premier plan) :
+
+       New-Item inferenceNN\STOP -ItemType File
+
+   Le run s'arrête dans les secondes qui suivent, écrit `checkpoint.json` et
+   affiche où il en était. Pour reprendre, relancer **la même commande** : elle
+   repart de la fenêtre suivante en conservant les détections déjà trouvées.
+   `--restart` ignore le point de reprise et repart de zéro ;
+   `--checkpoint-every` règle la fréquence d'enregistrement (120 s par défaut).
+
+   La reprise est refusée si les paramètres (`--conf`, `--overlap`, poids…) ou
+   l'emprise OSM ont changé depuis : l'index de fenêtre ne voudrait plus rien
+   dire. Le point de reprise est supprimé automatiquement à la fin du run.
+
 3. **Challenge MapRoulette** — filtrer au seuil de qualité (≥0.7 ≈ 88 % de
    précision sur le 37) plutôt que tout publier :
 

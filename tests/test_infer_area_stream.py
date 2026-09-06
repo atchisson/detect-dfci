@@ -93,3 +93,17 @@ def test_stream_survit_a_une_tuile_en_echec(tmp_path, capsys):
 def test_stream_sur_liste_vide(tmp_path):
     assert list(infer_area.stream_windows([], tmp_path, 160, SyncPool(),
                                           FakeSession())) == []
+
+
+def test_stream_reprend_a_l_index_demande(tmp_path):
+    centers = _centers(40)
+    out = list(infer_area.stream_windows(centers, tmp_path, 160, SyncPool(),
+                                         FakeSession(), start=25))
+    assert out == centers[25:]
+
+
+def test_stream_start_en_fin_de_liste_ne_rend_rien(tmp_path):
+    centers = _centers(10)
+    out = list(infer_area.stream_windows(centers, tmp_path, 160, SyncPool(),
+                                         FakeSession(), start=10))
+    assert out == []

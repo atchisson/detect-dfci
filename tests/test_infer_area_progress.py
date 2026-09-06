@@ -39,3 +39,16 @@ def test_progress_quiet_when_interval_large(capsys):
     list(infer_area.progress(iter(range(4)), 4, "X", min_interval=10_000))
     lines = [l for l in capsys.readouterr().out.splitlines() if l.strip()]
     assert len(lines) == 1 and "4/4 (100%)" in lines[0]
+
+
+def test_progress_offset_affiche_un_compteur_absolu(capsys):
+    # reprise : 3 fenêtres restantes sur 100, 97 déjà faites
+    list(infer_area.progress(iter(range(3)), 100, "Inférence", min_interval=0,
+                             offset=97))
+    out = capsys.readouterr().out
+    assert "98/100" in out and "100/100 (100%)" in out
+
+
+def test_progress_sans_offset_inchange(capsys):
+    list(infer_area.progress(iter(range(3)), 3, "X", min_interval=0))
+    assert "3/3 (100%)" in capsys.readouterr().out

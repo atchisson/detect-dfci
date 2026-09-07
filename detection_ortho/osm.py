@@ -120,16 +120,28 @@ def fetch_features_geom(
     return parse_geom_response(resp.json())
 
 
-def build_boundary_query(name: str) -> str:
+def build_boundary_query(
+    name: str, admin_level: str | int | None = None, insee: str | None = None,
+) -> str:
     """Requête Overpass : relation-frontière `name` avec géométrie.
 
     On matche la PRÉSENCE d'un tag `boundary` (quelle que soit sa valeur) : les
     communes sont `boundary=administrative` mais les EPCI/métropoles utilisent
     `boundary=local_authority`. Cela évite d'exclure Tours Métropole.
+
+    `admin_level` et `insee` restreignent la recherche : plusieurs frontières
+    peuvent porter le même nom (« Indre » est à la fois le département 36 et une
+    commune de Loire-Atlantique), et les fusionner produirait une emprise
+    aberrante. `ref:INSEE` est le discriminant le plus sûr.
     """
+    filtres = ""
+    if admin_level is not None:
+        filtres += f'["admin_level"="{admin_level}"]'
+    if insee is not None:
+        filtres += f'["ref:INSEE"="{insee}"]'
     return (
         f'[out:json][timeout:180];\n'
-        f'relation["name"="{name}"]["boundary"];\n'
+        f'relation["name"="{name}"]["boundary"]{filtres};\n'
         f'out geom;'
     )
 
@@ -146,14 +158,43 @@ def parse_relation_ways(data: dict) -> list[list[dict]]:
     return ways
 
 
-def fetch_relation_ways(name: str, session=None) -> list[list[dict]]:
-    """Récupère les ways membres de la relation administrative `name`."""
+def parse_relations(data: dict) -> list[dict]:
+    """Relations de la réponse, une entrée {id, tags, ways} par relation.
+
+    Permet à l'appelant de détecter une ambiguïté de nom **avant** de fusionner
+    les géométries.
+    """
+    out: list[dict] = []
+    for el in data.get("elements", []):
+        if el.get("type") != "relation":
+            continue
+        ways = [m["geometry"] for m in el.get("members", [])
+                if m.get("type") == "way" and m.get("geometry")]
+        out.append({"id": el.get("id"), "tags": el.get("tags", {}), "ways": ways})
+    return out
+
+
+def _post_boundary(name, session, admin_level, insee):
     sess = session or requests.Session()
     resp = sess.post(
         OVERPASS_URL,
-        data=build_boundary_query(name),
+        data=build_boundary_query(name, admin_level, insee),
         headers={"User-Agent": USER_AGENT},
         timeout=180,
     )
     resp.raise_for_status()
-    return parse_relation_ways(resp.json())
+    return resp.json()
+
+
+def fetch_relation_ways(
+    name: str, session=None, admin_level=None, insee=None,
+) -> list[list[dict]]:
+    """Récupère les ways membres de la relation administrative `name`."""
+    return parse_relation_ways(_post_boundary(name, session, admin_level, insee))
+
+
+def fetch_boundary_relations(
+    name: str, session=None, admin_level=None, insee=None,
+) -> list[dict]:
+    """Relations-frontières correspondant à `name`, sans les fusionner."""
+    return parse_relations(_post_boundary(name, session, admin_level, insee))

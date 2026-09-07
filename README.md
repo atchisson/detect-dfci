@@ -202,6 +202,15 @@ se lit en streaming via le WMTS.
    > (« Métropole » → « M?tropole ») et la relation OSM reste introuvable.
    > Lancer depuis PowerShell.
 
+   **Noms ambigus.** Plusieurs frontières peuvent porter le même nom : « Indre »
+   est à la fois le département 36 et une commune de Loire-Atlantique. Le script
+   refuse alors de démarrer et liste les candidates plutôt que de les fusionner
+   en une emprise aberrante. Lever l'ambiguïté avec `--insee` (le plus sûr) :
+
+       python scripts/infer_area.py --boundary "Indre" --insee 36 ...
+
+   `--admin-level 6` (département) fonctionne aussi.
+
    **Mettre en pause et reprendre.** Un run départemental dure une nuit ; on peut
    l'interrompre sans perdre le travail fait. Déposer un fichier `STOP` dans le
    dossier de sortie (ou faire `Ctrl+C` si le run est au premier plan) :

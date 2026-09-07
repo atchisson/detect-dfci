@@ -25,7 +25,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from detection_ortho.osm import fetch_relation_ways, fetch_citernes
+from detection_ortho.osm import fetch_boundary_relations, fetch_citernes
 from detection_ortho.infer import (
     ways_to_polygon, windows_over_polygon, boxes_to_points, result_to_boxes,
 )
@@ -158,6 +158,11 @@ def main() -> None:
     ap.add_argument("--ortho", type=str, default=None,
                     help="chemin BD ORTHO locale (raster/VRT/dossier de dalles) ; "
                          "si fourni, lecture locale au lieu du WMTS")
+    ap.add_argument("--insee", type=str, default=None,
+                    help="code ref:INSEE pour lever une ambiguïté de nom "
+                         "(ex. 36 pour le département de l'Indre)")
+    ap.add_argument("--admin-level", type=str, default=None,
+                    help="niveau administratif OSM (6 = département, 8 = commune)")
     ap.add_argument("--restart", action="store_true",
                     help="ignorer un point de reprise existant et repartir de zéro")
     ap.add_argument("--checkpoint-every", type=float, default=120.0,
@@ -173,10 +178,29 @@ def main() -> None:
 
     # --- A. Emprise ---
     print(f"Récupération de l'emprise « {args.boundary} »...")
-    ways = fetch_retry(fetch_relation_ways, args.boundary, session)
-    if not ways:
+    rels = fetch_retry(fetch_boundary_relations, args.boundary, session,
+                       args.admin_level, args.insee)
+    if not rels:
         sys.exit(f"Aucune relation OSM « {args.boundary} » trouvée — "
                   f"vérifiez le nom exact.")
+    if len(rels) > 1:
+        # Fusionner des homonymes donnerait une emprise aberrante (« Indre » est
+        # à la fois le département 36 et une commune de Loire-Atlantique).
+        lignes = "\n".join(
+            f"    relation {r['id']} — admin_level "
+            f"{r['tags'].get('admin_level', '?')}, ref:INSEE "
+            f"{r['tags'].get('ref:INSEE', '?')}, boundary "
+            f"{r['tags'].get('boundary', '?')}"
+            for r in rels)
+        sys.exit(
+            f"{len(rels)} frontières OSM portent le nom « {args.boundary} » :\n"
+            f"{lignes}\n"
+            f"  Les fusionner produirait une emprise aberrante. Précisez avec "
+            f"--insee <code> (le plus sûr) ou --admin-level <niveau>.")
+    ways = rels[0]["ways"]
+    tags = rels[0]["tags"]
+    print(f"  relation {rels[0]['id']} — admin_level "
+          f"{tags.get('admin_level', '?')}, ref:INSEE {tags.get('ref:INSEE', '?')}")
     polygon = ways_to_polygon(ways)
     west, south, east, north = polygon.bounds
     print(f"Emprise: bbox=({west:.4f},{south:.4f},{east:.4f},{north:.4f})")
@@ -189,6 +213,7 @@ def main() -> None:
         "boundary": args.boundary, "conf": args.conf, "overlap": args.overlap,
         "zoom": ZOOM, "window": WINDOW, "weights": Path(args.weights).name,
         "ortho": args.ortho or "",
+        "insee": args.insee or "", "admin_level": args.admin_level or "",
     })
     start = 0
     detections: list[dict] = []

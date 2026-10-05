@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 
 from detection_ortho.tiles import lonlat_to_pixel, download_tile, LAYER
+from detection_ortho.geo import haversine_m
 
 _M_PER_DEG_LAT = 111320.0
 
@@ -251,6 +252,77 @@ def parse_verdicts(lines: list[str]) -> list[dict]:
         except ValueError:
             continue
     return out
+
+
+class _ProximityGrid:
+    """Grille de cellules ≥ radius_m pour tester la proximité sans O(n²).
+
+    60 km/° est un minorant sûr en France ; les 8 cellules voisines sont
+    examinées.
+    """
+
+    def __init__(self, radius_m: float) -> None:
+        self.radius_m = radius_m
+        self.cell = max(radius_m, 1.0) / 60000.0
+        self.grid: dict = {}
+
+    def _key(self, lon: float, lat: float) -> tuple[int, int]:
+        return math.floor(lon / self.cell), math.floor(lat / self.cell)
+
+    def add(self, lon: float, lat: float) -> None:
+        self.grid.setdefault(self._key(lon, lat), []).append((lon, lat))
+
+    def near(self, lon: float, lat: float) -> bool:
+        kx, ky = self._key(lon, lat)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for x, y in self.grid.get((kx + dx, ky + dy), ()):
+                    if haversine_m(lon, lat, x, y) <= self.radius_m:
+                        return True
+        return False
+
+
+def near_any(
+    points: list[tuple[float, float]],
+    ref_points: list[tuple[float, float]],
+    radius_m: float,
+) -> list[bool]:
+    """Pour chaque (lon, lat) de `points`, True s'il est à ≤ `radius_m` d'au
+    moins un point de `ref_points`."""
+    grid = _ProximityGrid(radius_m)
+    for lon, lat in ref_points:
+        grid.add(lon, lat)
+    return [grid.near(lon, lat) for lon, lat in points]
+
+
+def dedup_verdicts(
+    verdicts: list[dict],
+    ref_points: list[tuple[float, float]],
+    radius_m: float,
+) -> tuple[list[dict], int]:
+    """Écarte les verdicts `vrai` qui doublonnent un point déjà connu.
+
+    Un `vrai` à moins de `radius_m` d'un point de `ref_points` (positifs OSM
+    déjà chargés, en (lon, lat)) ou d'un `vrai` déjà retenu est écarté : c'est
+    la même citerne. Les `faux` ne sont jamais écartés (négatifs durs
+    légitimes, même posés sur une citerne OSM voisine). L'ordre est préservé.
+    Grille de cellules ≥ radius_m (60 km/° est un minorant sûr en France) pour
+    éviter le O(n²) ; les 8 cellules voisines sont examinées.
+    Retourne (verdicts conservés, nombre de `vrai` écartés).
+    """
+    grid = _ProximityGrid(radius_m)
+    for lon, lat in ref_points:
+        grid.add(lon, lat)
+    kept: list[dict] = []
+    dropped = 0
+    for v in verdicts:
+        if v["verdict"] == "vrai":
+            if grid.near(v["lon"], v["lat"]):
+                dropped += 1
+                continue
+            grid.add(v["lon"], v["lat"])
+        kept.append(v)
+    return kept, dropped
 
 
 def compose_rgn(rgb_bgr, irc_bgr):

@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 
 from detection_ortho.tiles import lonlat_to_pixel, download_tile, LAYER
+from detection_ortho.geo import haversine_m
 
 _M_PER_DEG_LAT = 111320.0
 
@@ -251,6 +252,53 @@ def parse_verdicts(lines: list[str]) -> list[dict]:
         except ValueError:
             continue
     return out
+
+
+def dedup_verdicts(
+    verdicts: list[dict],
+    ref_points: list[tuple[float, float]],
+    radius_m: float,
+) -> tuple[list[dict], int]:
+    """Écarte les verdicts `vrai` qui doublonnent un point déjà connu.
+
+    Un `vrai` à moins de `radius_m` d'un point de `ref_points` (positifs OSM
+    déjà chargés, en (lon, lat)) ou d'un `vrai` déjà retenu est écarté : c'est
+    la même citerne. Les `faux` ne sont jamais écartés (négatifs durs
+    légitimes, même posés sur une citerne OSM voisine). L'ordre est préservé.
+    Grille de cellules ≥ radius_m (60 km/° est un minorant sûr en France) pour
+    éviter le O(n²) ; les 8 cellules voisines sont examinées.
+    Retourne (verdicts conservés, nombre de `vrai` écartés).
+    """
+    cell = max(radius_m, 1.0) / 60000.0
+    grid: dict = {}
+
+    def key(lon: float, lat: float) -> tuple[int, int]:
+        return math.floor(lon / cell), math.floor(lat / cell)
+
+    def add(lon: float, lat: float) -> None:
+        grid.setdefault(key(lon, lat), []).append((lon, lat))
+
+    def near(lon: float, lat: float) -> bool:
+        kx, ky = key(lon, lat)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for x, y in grid.get((kx + dx, ky + dy), ()):
+                    if haversine_m(lon, lat, x, y) <= radius_m:
+                        return True
+        return False
+
+    for lon, lat in ref_points:
+        add(lon, lat)
+    kept: list[dict] = []
+    dropped = 0
+    for v in verdicts:
+        if v["verdict"] == "vrai":
+            if near(v["lon"], v["lat"]):
+                dropped += 1
+                continue
+            add(v["lon"], v["lat"])
+        kept.append(v)
+    return kept, dropped
 
 
 def compose_rgn(rgb_bgr, irc_bgr):

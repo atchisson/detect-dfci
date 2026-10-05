@@ -48,7 +48,8 @@ def test_main_writes_one_csv_per_dept(tmp_path, monkeypatch, capsys):
     ]
     tasks = {
         1: [_task(1, 0.65, 47.33), _task(2, 0.66, 47.34),
-            _task(5, 0.67, 47.35), _task(6, 0.68, 47.36)],
+            _task(5, 0.67, 47.35), _task(6, 0.68, 47.36),
+            {"status": 1, "geometries": {"features": []}}],  # sans location
         2: [_task(2, 9.0, 42.0)],
     }
     monkeypatch.setattr(fmv, "http_get_json", _fake_get(challenges, tasks))
@@ -63,7 +64,9 @@ def test_main_writes_one_csv_per_dept(tmp_path, monkeypatch, capsys):
     assert not list(tmp_path.glob("*sans*"))  # challenge non DECI ignoré
     assert len(list(tmp_path.glob("verdicts_*.csv"))) == 2
     out = capsys.readouterr().out
-    assert "44" in out and "ignoré" in out.lower()
+    assert "Test sans rapport" in out          # avertissement non-DECI
+    assert "statuts: {1: 2, 2: 1, 5: 1, 6: 1}" in out
+    assert "1 illisible(s)" in out
 
 
 def test_main_network_failure_leaves_no_partial_csv(tmp_path, monkeypatch):

@@ -82,18 +82,23 @@ def main() -> None:
             continue
         statuses: Counter = Counter()
         rows = []
+        n_illisibles = 0
         for task in iter_tasks(ch["id"]):
             statuses[task.get("status")] += 1
             row = task_to_row(task)
             if row is not None:
                 rows.append(row)
+            elif task.get("status") in STATUS_VERDICT:
+                n_illisibles += 1  # statut 1/2 mais tâche inexploitable
         # Écriture seulement une fois le challenge entièrement lu : pas de CSV partiel.
         path = args.out / f"verdicts_{dept}.csv"
         path.write_text(rows_to_csv(rows), encoding="utf-8")
         n_vrai = sum(1 for r in rows if r["verdict"] == "vrai")
         n_ignores = sum(n for s, n in statuses.items() if s not in STATUS_VERDICT)
         print(f"Dép. {dept}: {n_vrai} vrai(s), {len(rows) - n_vrai} faux, "
-              f"{n_ignores} ignoré(s) -> {path}")
+              f"{n_ignores} ignoré(s), {n_illisibles} illisible(s) "
+              f"[statuts: {dict(sorted(statuses.items(), key=lambda kv: str(kv[0])))}]"
+              f" -> {path}")
 
 
 if __name__ == "__main__":

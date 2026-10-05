@@ -18,3 +18,4 @@ BDORTHO_*/
 *.vrt
 *_3857.tif
 verdicts*.csv
+data/zones/

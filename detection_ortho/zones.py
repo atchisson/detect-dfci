@@ -9,6 +9,7 @@ la licence de ZICAD n'est pas précisée).
 """
 from __future__ import annotations
 
+import json
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -17,6 +18,7 @@ import requests
 from shapely.geometry import Polygon, box, shape
 from shapely.ops import unary_union
 from shapely.prepared import prep
+from shapely.validation import make_valid
 
 from detection_ortho.dataset import global_px_to_lonlat, lonlat_to_global_px
 
@@ -102,35 +104,68 @@ def filter_windows(centers, zones, zoom: int, window_px: int):
     return gardees, len(centers) - len(gardees)
 
 
-def _fetch(url: str, path: Path, refresh: bool, session) -> bytes:
-    """Contenu du fichier : cache si présent (sauf refresh), sinon téléchargement."""
+def _parse_geojson_bytes(data: bytes) -> list[Polygon]:
+    return parse_geojson_zones(json.loads(data))
+
+
+def _parse_checked(nom: str, data: bytes, parse) -> list[Polygon]:
+    """Polygones de `data` ; ValueError si illisible ou sans aucun polygone."""
+    try:
+        polys = parse(data)
+    except (ValueError, ET.ParseError) as exc:  # JSONDecodeError est un ValueError
+        raise ValueError(f"contenu {nom} illisible ({exc})") from exc
+    if not polys:
+        raise ValueError(
+            f"la source {nom} ne contient aucun polygone : inspectez le fichier "
+            f"source (format changé ?)")
+    return polys
+
+
+def _load_source(nom: str, url: str, path: Path, refresh: bool, session,
+                 parse) -> list[Polygon]:
+    """Polygones d'une source : cache si présent (sauf refresh), sinon
+    téléchargement. Le contenu n'est écrit en cache qu'après avoir été validé."""
     if path.exists() and not refresh:
-        return path.read_bytes()
+        try:
+            return _parse_checked(nom, path.read_bytes(), parse)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Cache {nom} inutilisable ({path}) : {exc}. Relancez avec "
+                f"--refresh-zones pour le retélécharger.") from exc
     try:
         resp = (session or requests).get(url, timeout=60)
         resp.raise_for_status()
-    except requests.RequestException as exc:
+        polys = _parse_checked(nom, resp.content, parse)
+    except (requests.RequestException, ValueError) as exc:
         if path.exists():
-            print(f"  Téléchargement impossible ({exc}) : cache conservé "
+            try:
+                polys = _parse_checked(nom, path.read_bytes(), parse)
+            except ValueError as exc2:
+                raise RuntimeError(
+                    f"Cache {nom} inutilisable ({path}) : {exc2}. Relancez avec "
+                    f"--refresh-zones.") from exc2
+            print(f"  Téléchargement {nom} inutilisable ({exc}) : cache conservé "
                   f"{path}.", file=sys.stderr)
-            return path.read_bytes()
+            return polys
         raise RuntimeError(
-            f"Impossible de télécharger les zones interdites ({url}) et aucun "
+            f"Impossible d'obtenir les zones interdites {nom} ({url}) et aucun "
             f"cache dans {path.parent} : {exc}. Relancez avec "
             f"--no-skip-restricted-zones pour inférer sans filtre.") from exc
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(resp.content)
-    return resp.content
+    return polys
 
 
 def load_zones(cache_dir: Path, refresh: bool = False, session=None):
     """Union ZIPTV + ZICAD (géométrie shapely WGS84)."""
     cache_dir = Path(cache_dir)
-    ziptv = _fetch(ZIPTV_URL, cache_dir / ZIPTV_FILE, refresh, session)
-    zicad = _fetch(ZICAD_URL, cache_dir / ZICAD_FILE, refresh, session)
-    import json
-    polys = parse_geojson_zones(json.loads(ziptv)) + parse_kml_zones(zicad)
-    polys = [p if p.is_valid else p.buffer(0) for p in polys]
+    ziptv = _load_source("ZIPTV", ZIPTV_URL, cache_dir / ZIPTV_FILE, refresh,
+                         session, _parse_geojson_bytes)
+    zicad = _load_source("ZICAD", ZICAD_URL, cache_dir / ZICAD_FILE, refresh,
+                         session, parse_kml_zones)
+    print(f"  ZIPTV : {len(ziptv)} polygone(s), ZICAD : {len(zicad)} polygone(s).",
+          file=sys.stderr)
+    polys = [p if p.is_valid else make_valid(p) for p in ziptv + zicad]
     return unary_union(polys)
 
 

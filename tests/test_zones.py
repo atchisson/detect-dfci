@@ -1,8 +1,9 @@
+import json
+
 import pytest
 import requests
 from shapely.geometry import Point, Polygon, box
 
-from detection_ortho import zones
 from detection_ortho.zones import (
     ZICAD_FILE, ZICAD_URL, ZIPTV_FILE, ZIPTV_URL, apply_zone_filter,
     filter_windows, load_zones, parse_geojson_zones, parse_kml_zones,
@@ -123,7 +124,6 @@ class DeadSession:
 
 
 def _routes():
-    import json
     return {ZIPTV_URL: json.dumps(GEOJSON).encode("utf-8"),
             ZICAD_URL: KML.encode("utf-8")}
 
@@ -163,14 +163,20 @@ def test_load_zones_reseau_ko_sans_cache_leve(tmp_path):
 
 
 def test_load_zones_repare_un_polygone_invalide(tmp_path):
-    import json
     noeud = {"type": "FeatureCollection", "features": [{
         "type": "Feature", "properties": {}, "geometry": {
             "type": "Polygon",
             "coordinates": [[[0, 0], [1, 1], [1, 0], [0, 1], [0, 0]]]}}]}
-    routes = {ZIPTV_URL: json.dumps(noeud).encode("utf-8"), ZICAD_URL: KML.encode("utf-8")}
+    kml_loin = ('<kml xmlns="http://www.opengis.net/kml/2.2"><Polygon><outerBoundaryIs>'
+                '<LinearRing><coordinates>10,10 10,11 11,11 11,10 10,10</coordinates>'
+                '</LinearRing></outerBoundaryIs></Polygon></kml>')
+    routes = {ZIPTV_URL: json.dumps(noeud).encode("utf-8"),
+              ZICAD_URL: kml_loin.encode("utf-8")}
     z = load_zones(tmp_path, session=FakeSession(routes))  # ne lève pas
     assert z.is_valid
+    assert z.area > 0
+    # nœud papillon : deux triangles de 0,25 chacun, soit ~0,5 au total
+    assert z.intersection(box(-1, -1, 2, 2)).area == pytest.approx(0.5)
 
 
 def test_apply_zone_filter_de_bout_en_bout(tmp_path):
@@ -183,3 +189,54 @@ def test_apply_zone_filter_de_bout_en_bout(tmp_path):
 def test_apply_zone_filter_liste_vide(tmp_path):
     assert apply_zone_filter([], tmp_path, ZOOM, WINDOW,
                              session=FakeSession(_routes())) == ([], 0)
+
+
+# --- sources dégradées --------------------------------------------------------
+
+HTML = b"<html><body>Maintenance en cours</body></html>"
+VIDE_GEOJSON = json.dumps({"type": "FeatureCollection", "features": []}).encode()
+KML_SANS_POLYGONE = (b'<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2">'
+                     b'<Document><Placemark><Point><coordinates>9,9</coordinates>'
+                     b'</Point></Placemark></Document></kml>')
+
+
+def test_html_200_sans_cache_leve_et_n_ecrit_rien(tmp_path):
+    routes = {ZIPTV_URL: HTML, ZICAD_URL: KML.encode("utf-8")}
+    with pytest.raises(RuntimeError, match="ZIPTV"):
+        load_zones(tmp_path, session=FakeSession(routes))
+    assert not (tmp_path / ZIPTV_FILE).exists()
+
+
+def test_html_200_en_refresh_garde_le_cache_et_avertit(tmp_path, capsys):
+    load_zones(tmp_path, session=FakeSession(_routes()))
+    avant = (tmp_path / ZIPTV_FILE).read_bytes()
+    routes = {ZIPTV_URL: HTML, ZICAD_URL: HTML}
+    z = load_zones(tmp_path, refresh=True, session=FakeSession(routes))
+    assert z.area == pytest.approx(3.0)
+    assert (tmp_path / ZIPTV_FILE).read_bytes() == avant
+    assert "cache" in capsys.readouterr().err
+
+
+def test_cache_corrompu_leve_avec_conseil_refresh(tmp_path):
+    (tmp_path / ZIPTV_FILE).write_bytes(HTML)
+    (tmp_path / ZICAD_FILE).write_bytes(KML.encode("utf-8"))
+    with pytest.raises(RuntimeError, match="--refresh-zones") as ei:
+        load_zones(tmp_path, session=DeadSession())
+    assert ZIPTV_FILE in str(ei.value)
+
+
+def test_ziptv_sans_polygone_leve(tmp_path):
+    routes = {ZIPTV_URL: VIDE_GEOJSON, ZICAD_URL: KML.encode("utf-8")}
+    with pytest.raises(RuntimeError, match="ZIPTV"):
+        load_zones(tmp_path, session=FakeSession(routes))
+
+
+def test_zicad_sans_polygone_leve(tmp_path):
+    routes = {ZIPTV_URL: json.dumps(GEOJSON).encode(), ZICAD_URL: KML_SANS_POLYGONE}
+    with pytest.raises(RuntimeError, match="ZICAD"):
+        load_zones(tmp_path, session=FakeSession(routes))
+
+
+def test_load_zones_affiche_les_comptes(tmp_path, capsys):
+    load_zones(tmp_path, session=FakeSession(_routes()))
+    assert "ZIPTV : 3 polygone(s), ZICAD : 2 polygone(s)" in capsys.readouterr().err

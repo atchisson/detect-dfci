@@ -368,4 +368,6 @@ Les fichiers sont téléchargés au premier run dans `data/zones/` (non versionn
 la licence de ZICAD n'est pas précisée). Une fenêtre qui touche seulement le
 bord d'une zone est écartée en entier : on perd les citernes voisines dans cette
 fenêtre (fenêtres de 130-190 m de côté). Les anciens résultats ne sont pas
-re-filtrés.
+re-filtrés. Le filtre modifie la grille de fenêtres : pour reprendre sans perte un
+run lancé avant cette fonctionnalité (point de reprise « incompatible »), relancez
+avec `--no-skip-restricted-zones`.

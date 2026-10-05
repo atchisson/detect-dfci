@@ -226,6 +226,8 @@ def main() -> None:
         if not centers:
             sys.exit("Toutes les fenêtres touchent une zone interdite : rien à "
                      "inférer.")
+    else:
+        print("Filtre des zones interdites désactivé (--no-skip-restricted-zones).")
 
     # --- A bis. Point de reprise ---
     empreinte = checkpoint.fingerprint(centers, {
@@ -246,7 +248,11 @@ def main() -> None:
             sys.exit(
                 f"Point de reprise incompatible dans {args.out} : les paramètres "
                 f"ou l'emprise OSM ont changé depuis. Relancez avec --restart "
-                f"pour repartir de zéro (le travail déjà fait sera perdu).")
+                f"pour repartir de zéro (le travail déjà fait sera perdu). Le "
+                f"filtre des zones interdites (--skip-restricted-zones / "
+                f"--no-skip-restricted-zones, ou un cache de zones modifié) change "
+                f"aussi la grille de fenêtres : --no-skip-restricted-zones permet "
+                f"de reprendre sans perte un run lancé avant cette fonctionnalité.")
         elif ckpt["done"] >= len(centers):
             print("Point de reprise complet : toutes les fenêtres ont déjà été "
                   "inférées, on passe directement au post-traitement.")

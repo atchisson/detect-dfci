@@ -30,6 +30,7 @@ from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
     write_chip, split_indices, spatial_split_indices, write_data_yaml,
     window_tiles, fixed_box_geo, DEFAULT_BOX_M, parse_verdicts, compose_rgn,
+    dedup_verdicts,
 )
 from detection_ortho.tiles import download_tile, LAYER_IRC
 
@@ -78,8 +79,12 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--exclude", type=int, nargs="*", default=[],
                     help="indices de positifs à écarter (intrus repérés au QA)")
-    ap.add_argument("--verdicts", type=Path, default=None,
-                    help="CSV de revue : faux -> négatifs durs, vrai -> positifs")
+    ap.add_argument("--verdicts", type=Path, nargs="+", default=None,
+                    help="CSV de revue (un ou plusieurs) : faux -> négatifs "
+                         "durs, vrai -> positifs")
+    ap.add_argument("--dedup-m", type=float, default=15.0,
+                    help="rayon (m) sous lequel un vrai doublonne un positif "
+                         "déjà présent et est écarté")
     ap.add_argument("--nir", action="store_true",
                     help="imagettes [R,G,NIR] (bleu remplacé par le NIR de l'IRC)")
     ap.add_argument("--spatial-split", action="store_true",
@@ -127,7 +132,11 @@ def main() -> None:
 
     # --- Chips issus de la revue (hard-negative mining) ---
     if args.verdicts:
-        vs = parse_verdicts(args.verdicts.read_text(encoding="utf-8").splitlines())
+        vs = []
+        for path in args.verdicts:
+            vs += parse_verdicts(path.read_text(encoding="utf-8").splitlines())
+        vs, n_dup = dedup_verdicts(
+            vs, [(b["lon"], b["lat"]) for b in boxes], args.dedup_m)
         n_hard = n_rev = 0
         for v in vs:
             if v["verdict"] == "faux":
@@ -137,7 +146,8 @@ def main() -> None:
                 bbox = fixed_box_geo(v["lon"], v["lat"], DEFAULT_BOX_M)
                 records.append((f"revpos_{n_rev:04d}", v["lon"], v["lat"], bbox))
                 n_rev += 1
-        print(f"Verdicts ingérés : {n_hard} négatif(s) dur(s), {n_rev} positif(s).")
+        print(f"Verdicts ingérés : {n_hard} négatif(s) dur(s), {n_rev} positif(s), "
+              f"{n_dup} doublon(s) écarté(s).")
 
     # --- Récupération des images : pré-téléchargement parallèle des tuiles (dédupliquées) ---
     needed = set()

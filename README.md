@@ -292,3 +292,48 @@ les points labellisés :
 La table précision/rappel vs seuil donne le point de fonctionnement à utiliser
 pour le run départemental. Pour catégoriser les faux positifs, ouvrir
 `scripts/make_map.py` sur les points de `verdicts.csv`.
+
+## Affiner avec les verdicts MapRoulette
+
+Réentraîner à partir des poids actuels avec les revues faites dans MapRoulette
+(`fixed` = vrai, `not an issue` = faux). Les départements **36 et 49** sont mis de
+côté pour mesurer le gain sur des zones jamais vues.
+
+1. **Récupérer les verdicts** (lecture seule, API publique) :
+
+       python scripts/fetch_maproulette_verdicts.py --out verdicts_maproulette
+
+   Écrit `verdicts_maproulette\verdicts_<dept>.csv` et affiche le décompte par
+   département (les statuts autres que fixed / not an issue sont ignorés).
+
+2. **Dataset d'affinage** — tous les départements SAUF 36 et 49 (sous PowerShell
+   les chemins sont listés explicitement, pas de globbing) :
+
+       python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 \
+           --verdicts verdicts_maproulette\verdicts_18.csv verdicts_maproulette\verdicts_28.csv \
+                      verdicts_maproulette\verdicts_37.csv verdicts_maproulette\verdicts_41.csv \
+                      verdicts_maproulette\verdicts_44.csv verdicts_maproulette\verdicts_45.csv \
+           --spatial-split --out dataset_mr
+
+   Les vrais à moins de `--dedup-m` (15 m) d'une citerne OSM déjà chargée sont
+   écartés (ex. le 37, déjà dans OSM). Un CSV local supplémentaire (ex. les faux
+   du 37 revus à la main) peut être ajouté à `--verdicts`.
+
+3. **Affiner** (30 époques depuis les poids actuels ; long sur CPU — de nuit, ou
+   `notebooks/train_yolo.ipynb` sur Colab) :
+
+       python scripts/train.py --data dataset_mr/data.yaml \
+           --model models/citernes-yolov8n.pt --epochs 30 --device cpu --name citernes_mr
+
+4. **Comparer avant/après sur les départements mis de côté** (une inférence par
+   point puis balayage de seuil ; mêmes commandes pour `verdicts_49.csv`) :
+
+       python scripts/sweep_threshold.py --weights models/citernes-yolov8n.pt \
+           --verdicts verdicts_maproulette\verdicts_36.csv
+       python scripts/sweep_threshold.py --weights runs/citernes_mr/weights/best.pt \
+           --verdicts verdicts_maproulette\verdicts_36.csv
+
+   Lire la précision et les vrais conservés à 0,40 / 0,55 / 0,70. ⚠️ Tous ces
+   points sont des détections ≥ 0,40 de l'ancien modèle : son rappel y vaut 100 %
+   par construction. Seuls le gain de **précision** et la rétention des vrais par
+   le nouveau modèle sont concluants (ce n'est pas une mesure du rappel absolu).

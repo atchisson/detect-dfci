@@ -40,6 +40,7 @@ from detection_ortho.geo import dedup_points
 from detection_ortho.compare import match_detections
 from detection_ortho.geojson_io import points_to_geojson, write_geojson
 from detection_ortho.maproulette import to_maproulette_tasks
+from detection_ortho.zones import apply_zone_filter
 
 
 def progress(iterable, total, label, min_interval=20.0, status=None, offset=0):
@@ -171,6 +172,14 @@ def main() -> None:
                     help="plafond disque du cache de tuiles WMTS, en Go : les "
                          "tuiles sont téléchargées par tranches puis purgées "
                          "(0 = tout pré-télécharger, cache non borné)")
+    ap.add_argument("--skip-restricted-zones",
+                    action=argparse.BooleanOptionalAction, default=True,
+                    help="ne pas inférer les fenêtres qui touchent une zone "
+                         "interdite ZIPTV/ZICAD (floutées dans l'ortho) ; "
+                         "--no-skip-restricted-zones pour désactiver")
+    ap.add_argument("--refresh-zones", action="store_true",
+                    help="retélécharger les fichiers ZIPTV/ZICAD au lieu de "
+                         "relire le cache data/zones/")
     args = ap.parse_args()
 
     cache = args.out / "tiles_cache"
@@ -208,6 +217,18 @@ def main() -> None:
     centers = windows_over_polygon(polygon, ZOOM, WINDOW, args.overlap)
     print(f"{len(centers)} fenêtre(s) d'inférence.")
 
+    if args.skip_restricted_zones:
+        zones_cache = Path(__file__).resolve().parent.parent / "data" / "zones"
+        centers, n_ecartees = apply_zone_filter(
+            centers, zones_cache, ZOOM, WINDOW, refresh=args.refresh_zones)
+        print(f"Zones interdites (ZIPTV/ZICAD) : {n_ecartees} fenêtre(s) "
+              f"écartée(s) sur {n_ecartees + len(centers)}.")
+        if not centers:
+            sys.exit("Toutes les fenêtres touchent une zone interdite : rien à "
+                     "inférer.")
+    else:
+        print("Filtre des zones interdites désactivé (--no-skip-restricted-zones).")
+
     # --- A bis. Point de reprise ---
     empreinte = checkpoint.fingerprint(centers, {
         "boundary": args.boundary, "conf": args.conf, "overlap": args.overlap,
@@ -227,7 +248,11 @@ def main() -> None:
             sys.exit(
                 f"Point de reprise incompatible dans {args.out} : les paramètres "
                 f"ou l'emprise OSM ont changé depuis. Relancez avec --restart "
-                f"pour repartir de zéro (le travail déjà fait sera perdu).")
+                f"pour repartir de zéro (le travail déjà fait sera perdu). Le "
+                f"filtre des zones interdites (--skip-restricted-zones / "
+                f"--no-skip-restricted-zones, ou un cache de zones modifié) change "
+                f"aussi la grille de fenêtres : --no-skip-restricted-zones permet "
+                f"de reprendre sans perte un run lancé avant cette fonctionnalité.")
         elif ckpt["done"] >= len(centers):
             print("Point de reprise complet : toutes les fenêtres ont déjà été "
                   "inférées, on passe directement au post-traitement.")

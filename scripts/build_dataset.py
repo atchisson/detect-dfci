@@ -30,7 +30,7 @@ from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
     write_chip, split_indices, spatial_split_indices, write_data_yaml,
     window_tiles, fixed_box_geo, DEFAULT_BOX_M, parse_verdicts, compose_rgn,
-    dedup_verdicts,
+    dedup_verdicts, near_any,
 )
 from detection_ortho.tiles import download_tile, LAYER_IRC
 
@@ -85,6 +85,12 @@ def main() -> None:
     ap.add_argument("--dedup-m", type=float, default=15.0,
                     help="rayon (m) sous lequel un vrai doublonne un positif "
                          "déjà présent et est écarté")
+    ap.add_argument("--holdout", type=Path, nargs="+", default=None,
+                    help="CSV de verdicts mis de côté (test) : tout enregistrement "
+                         "à moins de --holdout-m d'un de leurs points est écarté "
+                         "(évite les fuites via OSM ou le --bbox)")
+    ap.add_argument("--holdout-m", type=float, default=100.0,
+                    help="rayon (m) de l'écart autour des points --holdout")
     ap.add_argument("--nir", action="store_true",
                     help="imagettes [R,G,NIR] (bleu remplacé par le NIR de l'IRC)")
     ap.add_argument("--spatial-split", action="store_true",
@@ -148,6 +154,18 @@ def main() -> None:
                 n_rev += 1
         print(f"Verdicts ingérés : {n_hard} négatif(s) dur(s), {n_rev} positif(s), "
               f"{n_dup} doublon(s) écarté(s).")
+
+    # --- Mise de côté : aucun enregistrement près des points de test ---
+    if args.holdout:
+        held = []
+        for path in args.holdout:
+            held += [(v["lon"], v["lat"]) for v in
+                     parse_verdicts(path.read_text(encoding="utf-8").splitlines())]
+        flags = near_any([(r[1], r[2]) for r in records], held, args.holdout_m)
+        n_drop = sum(flags)
+        records = [r for r, f in zip(records, flags) if not f]
+        print(f"Holdout : {n_drop} enregistrement(s) écarté(s) à moins de "
+              f"{args.holdout_m:g} m de {len(held)} point(s) mis de côté.")
 
     # --- Récupération des images : pré-téléchargement parallèle des tuiles (dédupliquées) ---
     needed = set()

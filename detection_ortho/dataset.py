@@ -254,6 +254,47 @@ def parse_verdicts(lines: list[str]) -> list[dict]:
     return out
 
 
+class _ProximityGrid:
+    """Grille de cellules ≥ radius_m pour tester la proximité sans O(n²).
+
+    60 km/° est un minorant sûr en France ; les 8 cellules voisines sont
+    examinées.
+    """
+
+    def __init__(self, radius_m: float) -> None:
+        self.radius_m = radius_m
+        self.cell = max(radius_m, 1.0) / 60000.0
+        self.grid: dict = {}
+
+    def _key(self, lon: float, lat: float) -> tuple[int, int]:
+        return math.floor(lon / self.cell), math.floor(lat / self.cell)
+
+    def add(self, lon: float, lat: float) -> None:
+        self.grid.setdefault(self._key(lon, lat), []).append((lon, lat))
+
+    def near(self, lon: float, lat: float) -> bool:
+        kx, ky = self._key(lon, lat)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for x, y in self.grid.get((kx + dx, ky + dy), ()):
+                    if haversine_m(lon, lat, x, y) <= self.radius_m:
+                        return True
+        return False
+
+
+def near_any(
+    points: list[tuple[float, float]],
+    ref_points: list[tuple[float, float]],
+    radius_m: float,
+) -> list[bool]:
+    """Pour chaque (lon, lat) de `points`, True s'il est à ≤ `radius_m` d'au
+    moins un point de `ref_points`."""
+    grid = _ProximityGrid(radius_m)
+    for lon, lat in ref_points:
+        grid.add(lon, lat)
+    return [grid.near(lon, lat) for lon, lat in points]
+
+
 def dedup_verdicts(
     verdicts: list[dict],
     ref_points: list[tuple[float, float]],
@@ -269,34 +310,17 @@ def dedup_verdicts(
     éviter le O(n²) ; les 8 cellules voisines sont examinées.
     Retourne (verdicts conservés, nombre de `vrai` écartés).
     """
-    cell = max(radius_m, 1.0) / 60000.0
-    grid: dict = {}
-
-    def key(lon: float, lat: float) -> tuple[int, int]:
-        return math.floor(lon / cell), math.floor(lat / cell)
-
-    def add(lon: float, lat: float) -> None:
-        grid.setdefault(key(lon, lat), []).append((lon, lat))
-
-    def near(lon: float, lat: float) -> bool:
-        kx, ky = key(lon, lat)
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                for x, y in grid.get((kx + dx, ky + dy), ()):
-                    if haversine_m(lon, lat, x, y) <= radius_m:
-                        return True
-        return False
-
+    grid = _ProximityGrid(radius_m)
     for lon, lat in ref_points:
-        add(lon, lat)
+        grid.add(lon, lat)
     kept: list[dict] = []
     dropped = 0
     for v in verdicts:
         if v["verdict"] == "vrai":
-            if near(v["lon"], v["lat"]):
+            if grid.near(v["lon"], v["lat"]):
                 dropped += 1
                 continue
-            add(v["lon"], v["lat"])
+            grid.add(v["lon"], v["lat"])
         kept.append(v)
     return kept, dropped
 

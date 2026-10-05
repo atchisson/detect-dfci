@@ -303,35 +303,47 @@ côté pour mesurer le gain sur des zones jamais vues.
 
        python scripts/fetch_maproulette_verdicts.py --out verdicts_maproulette
 
-   Écrit `verdicts_maproulette\verdicts_<dept>.csv` et affiche le décompte par
+   Écrit `verdicts_maproulette/verdicts_<dept>.csv` et affiche le décompte par
    département (les statuts autres que fixed / not an issue sont ignorés).
 
 2. **Dataset d'affinage** — tous les départements SAUF 36 et 49 (sous PowerShell
    les chemins sont listés explicitement, pas de globbing) :
 
-       python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 \
-           --verdicts verdicts_maproulette\verdicts_18.csv verdicts_maproulette\verdicts_28.csv \
-                      verdicts_maproulette\verdicts_37.csv verdicts_maproulette\verdicts_41.csv \
-                      verdicts_maproulette\verdicts_44.csv verdicts_maproulette\verdicts_45.csv \
+       python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 `
+           --verdicts verdicts_maproulette/verdicts_18.csv `
+                      verdicts_maproulette/verdicts_28.csv `
+                      verdicts_maproulette/verdicts_37.csv `
+                      verdicts_maproulette/verdicts_41.csv `
+                      verdicts_maproulette/verdicts_44.csv `
+                      verdicts_maproulette/verdicts_45.csv `
+           --holdout verdicts_maproulette/verdicts_36.csv `
+                     verdicts_maproulette/verdicts_49.csv `
            --spatial-split --out dataset_mr
 
+   `--holdout` écarte tout enregistrement (citerne OSM, piscine, fond, verdict)
+   à moins de `--holdout-m` (100 m) d'un point des CSV mis de côté : le `--bbox`
+   du 37 déborde sur les départements voisins, et leurs citernes déjà passées
+   dans OSM fuiraient sinon dans l'entraînement.
+
    Les vrais à moins de `--dedup-m` (15 m) d'une citerne OSM déjà chargée sont
-   écartés (ex. le 37, déjà dans OSM). Un CSV local supplémentaire (ex. les faux
+   écartés (ex. le 37, déjà dans OSM), mais seulement à l'intérieur du `--bbox`.
+   Ce dédoublonnage s'applique aussi aux anciens runbooks `--verdicts verdicts.csv` ;
+   `--dedup-m 0` rétablit le comportement précédent. Un CSV local supplémentaire (ex. les faux
    du 37 revus à la main) peut être ajouté à `--verdicts`.
 
 3. **Affiner** (30 époques depuis les poids actuels ; long sur CPU — de nuit, ou
    `notebooks/train_yolo.ipynb` sur Colab) :
 
-       python scripts/train.py --data dataset_mr/data.yaml \
+       python scripts/train.py --data dataset_mr/data.yaml `
            --model models/citernes-yolov8n.pt --epochs 30 --device cpu --name citernes_mr
 
 4. **Comparer avant/après sur les départements mis de côté** (une inférence par
    point puis balayage de seuil ; mêmes commandes pour `verdicts_49.csv`) :
 
-       python scripts/sweep_threshold.py --weights models/citernes-yolov8n.pt \
-           --verdicts verdicts_maproulette\verdicts_36.csv
-       python scripts/sweep_threshold.py --weights runs/citernes_mr/weights/best.pt \
-           --verdicts verdicts_maproulette\verdicts_36.csv
+       python scripts/sweep_threshold.py --weights models/citernes-yolov8n.pt `
+           --verdicts verdicts_maproulette/verdicts_36.csv
+       python scripts/sweep_threshold.py --weights runs/citernes_mr/weights/best.pt `
+           --verdicts verdicts_maproulette/verdicts_36.csv
 
    Lire la précision et les vrais conservés à 0,40 / 0,55 / 0,70. ⚠️ Tous ces
    points sont des détections ≥ 0,40 de l'ancien modèle : son rappel y vaut 100 %

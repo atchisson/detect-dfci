@@ -50,6 +50,10 @@ Colab), comme les itérations précédentes.
   du centre d'un positif OSM déjà chargé (ou d'un autre `vrai` déjà retenu) est
   écarté. Nécessaire : les vrais du 37 sont maintenant dans OSM et ressortiraient
   doublement. Le décompte des doublons écartés est affiché.
+- `--holdout CSV [CSV ...]` / `--holdout-m` (défaut 100 m) : une fois tous les
+  enregistrements assemblés, écarte ceux situés près d'un point des CSV mis de
+  côté (le `--bbox` du 37 déborde sur 36/49 : leurs citernes passées dans OSM
+  fuiraient dans train). Test de proximité pur : `near_any` (`dataset.py`).
 - Aucun changement du format des chips ni du split (`--spatial-split` recommandé).
 - Le `--bbox` reste celui du 37 : il alimente positifs OSM, piscines et fonds. Les
   autres départements ne contribuent que par leurs verdicts (vrais = positifs boîte

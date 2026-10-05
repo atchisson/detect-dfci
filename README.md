@@ -349,3 +349,23 @@ côté pour mesurer le gain sur des zones jamais vues.
    points sont des détections ≥ 0,40 de l'ancien modèle : son rappel y vaut 100 %
    par construction. Seuls le gain de **précision** et la rétention des vrais par
    le nouveau modèle sont concluants (ce n'est pas une mesure du rappel absolu).
+
+## Zones interdites (ZIPTV / ZICAD)
+
+L'ortho IGN floute les sites militaires et sensibles : toute détection y est un
+faux positif. `scripts/infer_area.py` ne télécharge ni n'infère donc les
+fenêtres dont l'emprise touche une zone **ZIPTV** (prise de vue aérienne, arrêté
+de 2018) ou **ZICAD** (captation aérienne de données, version 10-2024). Le
+filtre est actif par défaut et affiche son bilan avant l'inférence.
+
+```powershell
+python scripts/infer_area.py --boundary "Indre" --insee 36 --weights models/citernes-yolov8n.pt
+python scripts/infer_area.py ... --refresh-zones              # retélécharger les zones
+python scripts/infer_area.py ... --no-skip-restricted-zones   # désactiver le filtre
+```
+
+Les fichiers sont téléchargés au premier run dans `data/zones/` (non versionné :
+la licence de ZICAD n'est pas précisée). Une fenêtre qui touche seulement le
+bord d'une zone est écartée en entier : on perd les citernes voisines dans cette
+fenêtre (fenêtres de 130-190 m de côté). Les anciens résultats ne sont pas
+re-filtrés.

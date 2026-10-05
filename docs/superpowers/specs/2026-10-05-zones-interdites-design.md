@@ -61,9 +61,10 @@ ajouté au `.gitignore`).
   (cache `data/zones/`), filtrage, affichage du bilan
   (« N fenêtre(s) écartée(s) sur M (zones interdites) »).
 - Si toutes les fenêtres sont écartées : sortie avec message clair.
-- L'empreinte du point de reprise reçoit `skip_zones` (booléen) en plus des
-  paramètres actuels. `centers` filtrés entrent déjà dans l'empreinte ; un
-  checkpoint antérieur est donc refusé avec le message existant (`--restart`).
+- L'empreinte du point de reprise n'est pas modifiée : `centers` filtrés y
+  entrent déjà. Un checkpoint antérieur reste donc valide si aucune zone ne
+  touche l'emprise, et est refusé (message existant, `--restart`) si le filtre
+  change la grille.
 
 ## Règle d'intersection
 

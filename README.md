@@ -239,7 +239,7 @@ se lit en streaming via le WMTS.
 
 > Le modèle (`models/citernes-yolov8n.pt`) a été affiné sur les verdicts
 > MapRoulette des départements 18, 28, 37, 41, 44 et 45 (36 et 49 mis de côté
-> pour le test) : sur ces deux départements, à rappel égal, 85 à 92 % de faux
+> pour le test) : sur ces deux départements, à rappel égal, 78 à 92 % de faux
 > positifs en moins qu'avant. Ses scores sont plus bas : utiliser `--conf 0.25`
 > (rappel ≈ 0,90 pour une précision de 0,88 à 0,95), pas 0.40. Il excelle sur la
 > **bâche souple turquoise** mais rate les types atypiques (grands bassins,

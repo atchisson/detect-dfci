@@ -6,6 +6,7 @@ schéma slippy-map standard : TILEMATRIX=zoom, TILECOL=x, TILEROW=y.
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -126,6 +127,39 @@ def download_tile(
             if attempt + 1 < max(1, tries):
                 time.sleep(pause * (attempt + 1))
     raise last
+
+
+def prefetch_tiles(
+    tiles, cache_dir, layer: str = LAYER, zoom: int = 19, workers: int = 12,
+    session=None, on_progress=None,
+) -> list[str]:
+    """Télécharge les tuiles (x, y) en parallèle dans le cache.
+
+    Un échec n'interrompt pas les autres : retourne la liste des messages
+    d'échec (vide si tout va bien). `on_progress(i, total)` est appelé, depuis
+    le fil appelant, après chaque tuile traitée.
+    """
+    tiles = list(tiles)
+    if not tiles:
+        return []
+    sess = session or requests.Session()
+
+    def one(xy):
+        x, y = xy
+        try:
+            download_tile(x, y, zoom, cache_dir, session=sess, layer=layer)
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return f"tuile {x},{y} échec ({exc})"
+
+    errors: list[str] = []
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for i, err in enumerate(pool.map(one, tiles), 1):
+            if err:
+                errors.append(err)
+            if on_progress:
+                on_progress(i, len(tiles))
+    return errors
 
 
 def save_tile_with_marker(

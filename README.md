@@ -383,3 +383,47 @@ fenêtre (fenêtres de 130-190 m de côté). Les anciens résultats ne sont pas
 re-filtrés. Le filtre modifie la grille de fenêtres : pour reprendre sans perte un
 run lancé avant cette fonctionnalité (point de reprise « incompatible »), relancez
 avec `--no-skip-restricted-zones`.
+
+## Adapter le modèle à l'ortho express 2026
+
+L'ortho express 2026 (couche `ORTHOIMAGERY.ORTHOPHOTOS.RVB-EXPRESS.2026`) a un autre rendu (ombres,
+reflets, éclairage) : le modèle affiné y perd du rappel. On l'adapte avec des imagettes des deux couches
+aux mêmes points de verdicts. Le 36 et le 49 restent mis de côté ; le 44 et le 49 n'ont pas de 2026 (ils
+n'apportent que leurs imagettes habituelles, les fenêtres vides sont sautées).
+
+1. **Jeu de données à deux couches** (tout sauf 36 et 49) :
+
+       python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 `
+           --layers ORTHOIMAGERY.ORTHOPHOTOS ORTHOIMAGERY.ORTHOPHOTOS.RVB-EXPRESS.2026 `
+           --verdicts verdicts_maproulette/verdicts_18.csv `
+                      verdicts_maproulette/verdicts_28.csv `
+                      verdicts_maproulette/verdicts_37.csv `
+                      verdicts_maproulette/verdicts_41.csv `
+                      verdicts_maproulette/verdicts_44.csv `
+                      verdicts_maproulette/verdicts_45.csv `
+           --holdout verdicts_maproulette/verdicts_36.csv `
+                     verdicts_maproulette/verdicts_49.csv `
+           --spatial-split --out dataset_mr2026
+
+   Chaque point donne une imagette par couche disponible (`<nom>` et `<nom>__rvb-express-2026`), toujours
+   dans la même partie (entraînement, validation ou test). Un résumé par couche indique les imagettes
+   écrites, les fenêtres vides et les échecs.
+
+2. **Affiner** depuis les poids actuels (≈ 20 époques ; environ 10 h de CPU, à confirmer sur une époque) :
+
+       python scripts/train.py --data dataset_mr2026/data.yaml `
+           --model models/citernes-yolov8n.pt --epochs 20 --device cpu --name citernes_2026
+
+3. **Évaluer** (les tuiles sont préchargées en parallèle) :
+
+       python scripts/sweep_threshold.py --weights runs/citernes_2026/weights/best.pt `
+           --verdicts verdicts_maproulette/verdicts_36.csv `
+           --layer ORTHOIMAGERY.ORTHOPHOTOS.RVB-EXPRESS.2026
+       python scripts/sweep_threshold.py --weights runs/citernes_2026/weights/best.pt `
+           --verdicts verdicts_maproulette/verdicts_36.csv
+       python scripts/sweep_threshold.py --weights runs/citernes_2026/weights/best.pt `
+           --verdicts verdicts_maproulette/verdicts_49.csv
+
+   **Critère d'acceptation** (seuil 0,25) : sur le 36 en 2026, rappel ≥ 0,85 et précision ≥ 0,85 (avant :
+   0,60 et 0,92) ; sur l'ortho habituelle, perte ≤ 0,03 de rappel et de précision (avant : 0,895 et 0,879
+   au 36, 0,924 et 0,948 au 49). Sinon, ne pas remplacer `models/citernes-yolov8n.pt`.

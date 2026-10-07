@@ -121,6 +121,12 @@ def prefetch_points(
     return errors
 
 
+def window_is_blank(image, min_frac: float = 0.05) -> bool:
+    """Vrai si moins de `min_frac` des pixels ne sont pas (quasi) blancs : pas de donnée à cet endroit."""
+    non_white = (image.min(axis=2) < 250).mean()
+    return float(non_white) < min_frac
+
+
 def assemble_window(
     center_lon: float, center_lat: float, zoom: int, window_px: int,
     cache_dir, session=None, tile_size: int = 256, layer=LAYER,

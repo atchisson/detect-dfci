@@ -72,3 +72,14 @@ def test_download_tile_sans_reprise_si_tries_1(tmp_path):
     with pytest.raises(RuntimeError):
         download_tile(1, 2, 19, tmp_path, session=sess, tries=1, pause=0)
     assert sess.calls == 1
+
+
+def test_download_tile_separates_layers_sharing_a_year(tmp_path):
+    sess = FakeSession()
+    a = download_tile(1, 2, 19, tmp_path, session=sess,
+                      layer="ORTHOIMAGERY.ORTHOPHOTOS.RVB-EXPRESS.2026")
+    b = download_tile(1, 2, 19, tmp_path, session=sess,
+                      layer="ORTHOIMAGERY.ORTHOPHOTOS.IRC-EXPRESS.2026")
+    assert a != b
+    assert a.exists() and b.exists()
+    assert sess.calls == 2

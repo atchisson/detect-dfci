@@ -20,6 +20,21 @@ LAYER_IRC = "ORTHOIMAGERY.ORTHOPHOTOS.IRC"  # composite CIR : bande 1 = NIR
 # On s'identifie sur les appels HTTP avec l'URL du dépôt.
 USER_AGENT = "detect-dfci/0.1 (+https://github.com/atchisson/detect-dfci)"
 
+_LAYER_PREFIX = "ORTHOIMAGERY.ORTHOPHOTOS."
+
+
+def layer_tag(layer: str) -> str:
+    """Suffixe de nom de fichier de cache propre à la couche.
+
+    Vide pour la couche standard ; sinon `_` + nom court (sans le préfixe
+    ORTHOIMAGERY.ORTHOPHOTOS.), en minuscules, avec points et tirets bas
+    remplacés par des tirets. IRC donne `_irc`, comme avant.
+    """
+    if layer == LAYER:
+        return ""
+    short = layer[len(_LAYER_PREFIX):] if layer.startswith(_LAYER_PREFIX) else layer
+    return "_" + short.lower().replace(".", "-").replace("_", "-")
+
 # Transformateurs Web Mercator (EPSG:3857) <-> WGS84 (EPSG:4326).
 _TO_MERC = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
 _TO_WGS = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
@@ -90,7 +105,7 @@ def download_tile(
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    tag = "" if layer == LAYER else "_" + layer.rsplit(".", 1)[-1].lower()
+    tag = layer_tag(layer)
     path = cache_dir / f"{zoom}_{x}_{y}{tag}.jpg"
     if path.exists():
         return path

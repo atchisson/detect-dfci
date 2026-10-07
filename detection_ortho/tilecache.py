@@ -24,7 +24,7 @@ DEFAULT_TILE_BYTES = 8_000
 # (téléchargement + inférence + purge) même si le budget disque est large.
 MAX_WINDOWS_PER_CHUNK = 5_000
 
-_TILE_RE = re.compile(r"^(\d+)_(-?\d+)_(-?\d+)(_[a-z]+)?\.jpg$")
+_TILE_RE = re.compile(r"^(\d+)_(-?\d+)_(-?\d+)(_[a-z0-9-]+)?\.jpg$")
 
 
 def max_tiles_for_budget(budget_bytes: float, tile_bytes: float) -> int:

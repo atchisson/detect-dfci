@@ -183,7 +183,7 @@ se lit en streaming via le WMTS.
 2. **Inférence** (ajouter `--ortho cog_tilesNN/mosaic.vrt` si option locale) :
 
        python scripts/infer_area.py --boundary "<Département>" \
-           --weights models/citernes-yolov8n.pt --conf 0.40 \
+           --weights models/citernes-yolov8n.pt --conf 0.25 \
            --device cpu --out inferenceNN
 
    Compter ~19 h en CPU pour un département (mesuré sur le 49 : 669 245
@@ -227,19 +227,24 @@ se lit en streaming via le WMTS.
    l'emprise OSM ont changé depuis : l'index de fenêtre ne voudrait plus rien
    dire. Le point de reprise est supprimé automatiquement à la fin du run.
 
-3. **Challenge MapRoulette** — filtrer au seuil de qualité (≥0.7 ≈ 88 % de
-   précision sur le 37) plutôt que tout publier :
+3. **Challenge MapRoulette** — filtrer au seuil de qualité (≥0.5 ≈ 97–99 % de
+   précision sur les départements 36 et 49 de test) plutôt que tout publier :
 
        python scripts/export_maproulette.py \
            --input inferenceNN/detected_only.geojson \
-           --out inferenceNN/challenge_NN.geojson --min-score 0.7
+           --out inferenceNN/challenge_NN.geojson --min-score 0.5
 
    (Import manuel dans MapRoulette — aucun upload automatique.) Pour réviser à
    la main d'abord : `python scripts/make_map.py --dir inferenceNN`.
 
-> Le modèle a été entraîné sur le 37 : il excelle sur la **bâche souple
-> turquoise** mais rate les types atypiques (grands bassins, cuves rondes). Pour
-> le national, envisager un ré-entraînement sur des exemples plus divers.
+> Le modèle (`models/citernes-yolov8n.pt`) a été affiné sur les verdicts
+> MapRoulette des départements 18, 28, 37, 41, 44 et 45 (36 et 49 mis de côté
+> pour le test) : sur ces deux départements, à rappel égal, 85 à 92 % de faux
+> positifs en moins qu'avant. Ses scores sont plus bas : utiliser `--conf 0.25`
+> (rappel ≈ 0,90 pour une précision de 0,88 à 0,95), pas 0.40. Il excelle sur la
+> **bâche souple turquoise** mais rate les types atypiques (grands bassins,
+> cuves rondes), absents des challenges revus. Pour le national, envisager un
+> ré-entraînement sur des exemples plus divers.
 
 ## Test de valeur NIR (proxy [R,G,NIR])
 
@@ -298,6 +303,13 @@ pour le run départemental. Pour catégoriser les faux positifs, ouvrir
 Réentraîner à partir des poids actuels avec les revues faites dans MapRoulette
 (`fixed` = vrai, `not an issue` = faux). Les départements **36 et 49** sont mis de
 côté pour mesurer le gain sur des zones jamais vues.
+
+> Ce runbook a été exécuté : `models/citernes-yolov8n.pt` est désormais le modèle
+> affiné (`runs/citernes_mr`). L'ancien modèle (entraîné sur le 37 seul) se
+> récupère sous PowerShell avec
+> `cmd /c "git show 0a5d6c2:models/citernes-yolov8n.pt > models\citernes-v1.pt"` ;
+> pour rejouer la comparaison de l'étape 4, l'utiliser comme poids « avant ».
+> Une nouvelle itération (étape 3) repartirait des poids actuels, déjà affinés.
 
 1. **Récupérer les verdicts** (lecture seule, API publique) :
 

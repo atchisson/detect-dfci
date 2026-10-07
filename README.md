@@ -389,7 +389,7 @@ avec `--no-skip-restricted-zones`.
 L'ortho express 2026 (couche `ORTHOIMAGERY.ORTHOPHOTOS.RVB-EXPRESS.2026`) a un autre rendu (ombres,
 reflets, éclairage) : le modèle affiné y perd du rappel. On l'adapte avec des imagettes des deux couches
 aux mêmes points de verdicts. Le 36 et le 49 restent mis de côté ; le 44 et le 49 n'ont pas de 2026 (ils
-n'apportent que leurs imagettes habituelles, les fenêtres vides sont sautées).
+n'apportent que leurs imagettes habituelles : les fenêtres sans imagerie 2026 sont sautées, sans nouvelle tentative).
 
 1. **Jeu de données à deux couches** (tout sauf 36 et 49) :
 
@@ -407,7 +407,7 @@ n'apportent que leurs imagettes habituelles, les fenêtres vides sont sautées).
 
    Chaque point donne une imagette par couche disponible (`<nom>` et `<nom>__rvb-express-2026`), toujours
    dans la même partie (entraînement, validation ou test). Un résumé par couche indique les imagettes
-   écrites, les fenêtres vides et les échecs.
+   écrites, les fenêtres vides, les fenêtres absentes (pas d'imagerie sur la couche) et les échecs.
 
 2. **Affiner** depuis les poids actuels (≈ 20 époques ; environ 10 h de CPU, à confirmer sur une époque) :
 

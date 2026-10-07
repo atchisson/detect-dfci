@@ -36,6 +36,14 @@ def layer_tag(layer: str) -> str:
     short = layer[len(_LAYER_PREFIX):] if layer.startswith(_LAYER_PREFIX) else layer
     return "_" + short.lower().replace(".", "-").replace("_", "-")
 
+
+def tile_cache_path(
+    x: int, y: int, zoom: int, cache_dir, layer: str = LAYER
+) -> Path:
+    """Chemin de la tuile (x, y, zoom) de la couche `layer` dans le cache."""
+    return Path(cache_dir) / f"{zoom}_{x}_{y}{layer_tag(layer)}.jpg"
+
+
 # Transformateurs Web Mercator (EPSG:3857) <-> WGS84 (EPSG:4326).
 _TO_MERC = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
 _TO_WGS = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
@@ -106,8 +114,7 @@ def download_tile(
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    tag = layer_tag(layer)
-    path = cache_dir / f"{zoom}_{x}_{y}{tag}.jpg"
+    path = tile_cache_path(x, y, zoom, cache_dir, layer)
     if path.exists():
         return path
     sess = session or requests.Session()
@@ -131,7 +138,7 @@ def download_tile(
 
 def prefetch_tiles(
     tiles, cache_dir, layer: str = LAYER, zoom: int = 19, workers: int = 12,
-    session=None, on_progress=None,
+    session=None, on_progress=None, tries: int = 3,
 ) -> list[str]:
     """Télécharge les tuiles (x, y) en parallèle dans le cache.
 
@@ -147,7 +154,8 @@ def prefetch_tiles(
     def one(xy):
         x, y = xy
         try:
-            download_tile(x, y, zoom, cache_dir, session=sess, layer=layer)
+            download_tile(x, y, zoom, cache_dir, session=sess, layer=layer,
+                          tries=tries)
             return None
         except Exception as exc:  # noqa: BLE001
             return f"tuile {x},{y} échec ({exc})"

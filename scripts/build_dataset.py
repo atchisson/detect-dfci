@@ -31,7 +31,7 @@ from detection_ortho.dataset import (
     window_tiles, fixed_box_geo, DEFAULT_BOX_M, parse_verdicts, compose_rgn,
     dedup_verdicts, near_any, window_is_blank,
 )
-from detection_ortho.tiles import LAYER, LAYER_IRC, layer_tag, prefetch_tiles
+from detection_ortho.tiles import LAYER, LAYER_IRC, layer_tag, prefetch_tiles, tile_cache_path
 
 
 def progress(iterable, total, label):
@@ -95,12 +95,13 @@ def main() -> None:
     ap.add_argument("--layers", nargs="+", default=[LAYER], metavar="COUCHE",
                     help="couches WMTS à rendre : chaque enregistrement donne une "
                          "imagette par couche disponible (défaut : ortho habituelle)")
-    ap.add_argument("--spatial-split",action="store_true",
+    ap.add_argument("--spatial-split", action="store_true",
                     help="split géographique par cellule (au lieu d'aléatoire)")
     ap.add_argument("--cell-deg", type=float, default=0.05,
                     help="taille de cellule du split spatial, en degrés")
     ap.add_argument("--out", type=Path, default=Path("dataset"))
     args = ap.parse_args()
+    args.layers = list(dict.fromkeys(args.layers))  # sans doublons, ordre gardé
     if args.nir and list(args.layers) != [LAYER]:
         ap.error("--nir est incompatible avec --layers")
 
@@ -183,12 +184,15 @@ def main() -> None:
 
     # Session partagée = keep-alive (évite un handshake TCP/TLS par tuile).
     session = requests.Session()
-    for layer in list(args.layers) + ([LAYER_IRC] if args.nir else []):
+    for n_layer, layer in enumerate(list(args.layers) + ([LAYER_IRC] if args.nir else [])):
         print(f"{len(needed)} tuile(s) à récupérer, couche {layer} "
               f"(parallèle x{args.workers})...")
+        # Première couche : un 404 peut être passager, on réessaie. Couches
+        # suivantes : un 404 signifie « pas d'imagerie », une seule tentative.
         errors = prefetch_tiles(needed, cache, layer=layer, zoom=ZOOM,
                                 workers=args.workers, session=session,
-                                on_progress=_tile_progress)
+                                on_progress=_tile_progress,
+                                tries=3 if n_layer == 0 else 1)
         if errors:
             print(f"  {len(errors)} tuile(s) en échec (réessayées à l'assemblage).",
                   file=sys.stderr)
@@ -221,12 +225,23 @@ def main() -> None:
     written = {layer: 0 for layer in args.layers}
     blank = {layer: 0 for layer in args.layers}
     failed = {layer: 0 for layer in args.layers}
+    absent = {layer: 0 for layer in args.layers}
     for i, (name, lon, lat, bbox_geo) in enumerate(
         progress(records, len(records), "Génération des chips")
     ):
         part = where[i]  # un enregistrement = une seule partie, quelle que soit la couche
         for k, layer in enumerate(args.layers):
-            chip_name = name if k == 0 else f"{name}__{layer_tag(layer).lstrip('_')}"
+            if k == 0:
+                chip_name = name
+            else:
+                chip_name = f"{name}__{layer_tag(layer).lstrip('_') or 'standard'}"
+                # Tuile manquante après le préchargement = pas d'imagerie :
+                # fenêtre « absente », sans réseau ni nouvelle tentative.
+                wtiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
+                if any(not tile_cache_path(tx, ty, ZOOM, cache, layer).exists()
+                       for tx, ty in wtiles):
+                    absent[layer] += 1
+                    continue
             try:
                 win_img, ogx, ogy = assemble_window(lon, lat, ZOOM, WINDOW, cache,
                                                     layer=layer)
@@ -256,7 +271,8 @@ def main() -> None:
             written[layer] += 1
     for layer in args.layers:
         print(f"Couche {layer} : {written[layer]} imagette(s), "
-              f"{blank[layer]} fenêtre(s) vide(s), {failed[layer]} échec(s).")
+              f"{blank[layer]} fenêtre(s) vide(s), {absent[layer]} absente(s), "
+              f"{failed[layer]} échec(s).")
 
     write_data_yaml(args.out, args.out / "data.yaml")
 

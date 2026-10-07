@@ -60,3 +60,22 @@ def test_prefetch_points_prefetches_each_layer(tmp_path, monkeypatch):
     assert [c[0] for c in calls] == ["L1", "L2"]
     assert calls[0][1] == calls[1][1] > 0
     assert errors == []
+
+
+def test_prefetch_tiles_forwards_tries(tmp_path, monkeypatch):
+    seen = []
+
+    def fake(x, y, zoom, cache_dir, session=None, layer=None, **kw):
+        seen.append(kw.get("tries"))
+        return tmp_path / "ok.jpg"
+
+    monkeypatch.setattr(tiles_mod, "download_tile", fake)
+    prefetch_tiles([(1, 1), (2, 2)], tmp_path, workers=1, tries=1)
+    assert seen == [1, 1]
+
+
+def test_tile_cache_path_standard_and_tagged(tmp_path):
+    assert tiles_mod.tile_cache_path(5, 6, 19, tmp_path) == tmp_path / "19_5_6.jpg"
+    assert (tiles_mod.tile_cache_path(
+        5, 6, 19, tmp_path, "ORTHOIMAGERY.ORTHOPHOTOS.RVB-EXPRESS.2026")
+        == tmp_path / "19_5_6_rvb-express-2026.jpg")

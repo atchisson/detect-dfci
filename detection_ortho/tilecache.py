@@ -24,7 +24,7 @@ DEFAULT_TILE_BYTES = 8_000
 # (téléchargement + inférence + purge) même si le budget disque est large.
 MAX_WINDOWS_PER_CHUNK = 5_000
 
-_TILE_RE = re.compile(r"^(\d+)_(-?\d+)_(-?\d+)(_[a-z]+)?\.jpg$")
+_TILE_RE = re.compile(r"^(\d+)_(-?\d+)_(-?\d+)(_[a-z0-9-]+)?\.jpg$")
 
 
 def max_tiles_for_budget(budget_bytes: float, tile_bytes: float) -> int:
@@ -63,8 +63,12 @@ def purge_cache(
 ) -> tuple[int, int, int]:
     """Supprime du cache les tuiles du zoom donné absentes de `keep`.
 
-    Les fichiers ne suivant pas le motif `<zoom>_<x>_<y>.jpg` (ou d'un autre
-    zoom) sont laissés intacts. Retourne (supprimées, restantes, octets restants).
+    Le motif reconnu est `<zoom>_<x>_<y>[_<tag>].jpg` : les tuiles sont gardées
+    ou supprimées selon (x, y), quel que soit le suffixe de couche. Il faut donc
+    utiliser UN dossier de cache par run/couche, sinon la purge d'une couche
+    efface ou préserve les tuiles des autres. Les fichiers ne suivant pas ce
+    motif (ou d'un autre zoom) sont laissés intacts. Retourne (supprimées,
+    restantes, octets restants).
     """
     cache_dir = Path(cache_dir)
     if not cache_dir.is_dir():

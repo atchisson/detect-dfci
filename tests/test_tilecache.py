@@ -82,3 +82,14 @@ def test_purge_cache_epargne_les_autres_zooms_et_fichiers(tmp_path):
 
 def test_purge_cache_sur_repertoire_absent(tmp_path):
     assert purge_cache(tmp_path / "nexiste_pas", set(), ZOOM) == (0, 0, 0)
+
+
+def test_purge_cache_removes_tagged_layer_tiles(tmp_path):
+    keep = {(1, 1)}
+    for name in ("19_1_1.jpg", "19_2_2.jpg", "19_2_2_irc.jpg",
+                 "19_2_2_rvb-express-2026.jpg", "18_2_2_rvb-express-2026.jpg"):
+        (tmp_path / name).write_bytes(b"x")
+    deleted, kept, _ = purge_cache(tmp_path, keep, 19)
+    assert deleted == 3 and kept == 1
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "18_2_2_rvb-express-2026.jpg", "19_1_1.jpg"]

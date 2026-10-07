@@ -6,6 +6,7 @@ schéma slippy-map standard : TILEMATRIX=zoom, TILECOL=x, TILEROW=y.
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -19,6 +20,29 @@ LAYER_IRC = "ORTHOIMAGERY.ORTHOPHOTOS.IRC"  # composite CIR : bande 1 = NIR
 
 # On s'identifie sur les appels HTTP avec l'URL du dépôt.
 USER_AGENT = "detect-dfci/0.1 (+https://github.com/atchisson/detect-dfci)"
+
+_LAYER_PREFIX = "ORTHOIMAGERY.ORTHOPHOTOS."
+
+
+def layer_tag(layer: str) -> str:
+    """Suffixe de nom de fichier de cache propre à la couche.
+
+    Vide pour la couche standard ; sinon `_` + nom court (sans le préfixe
+    ORTHOIMAGERY.ORTHOPHOTOS.), en minuscules, avec points et tirets bas
+    remplacés par des tirets. IRC donne `_irc`, comme avant.
+    """
+    if layer == LAYER:
+        return ""
+    short = layer[len(_LAYER_PREFIX):] if layer.startswith(_LAYER_PREFIX) else layer
+    return "_" + short.lower().replace(".", "-").replace("_", "-")
+
+
+def tile_cache_path(
+    x: int, y: int, zoom: int, cache_dir, layer: str = LAYER
+) -> Path:
+    """Chemin de la tuile (x, y, zoom) de la couche `layer` dans le cache."""
+    return Path(cache_dir) / f"{zoom}_{x}_{y}{layer_tag(layer)}.jpg"
+
 
 # Transformateurs Web Mercator (EPSG:3857) <-> WGS84 (EPSG:4326).
 _TO_MERC = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
@@ -90,8 +114,7 @@ def download_tile(
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    tag = "" if layer == LAYER else "_" + layer.rsplit(".", 1)[-1].lower()
-    path = cache_dir / f"{zoom}_{x}_{y}{tag}.jpg"
+    path = tile_cache_path(x, y, zoom, cache_dir, layer)
     if path.exists():
         return path
     sess = session or requests.Session()
@@ -111,6 +134,40 @@ def download_tile(
             if attempt + 1 < max(1, tries):
                 time.sleep(pause * (attempt + 1))
     raise last
+
+
+def prefetch_tiles(
+    tiles, cache_dir, layer: str = LAYER, zoom: int = 19, workers: int = 12,
+    session=None, on_progress=None, tries: int = 3,
+) -> list[str]:
+    """Télécharge les tuiles (x, y) en parallèle dans le cache.
+
+    Un échec n'interrompt pas les autres : retourne la liste des messages
+    d'échec (vide si tout va bien). `on_progress(i, total)` est appelé, depuis
+    le fil appelant, après chaque tuile traitée.
+    """
+    tiles = list(tiles)
+    if not tiles:
+        return []
+    sess = session or requests.Session()
+
+    def one(xy):
+        x, y = xy
+        try:
+            download_tile(x, y, zoom, cache_dir, session=sess, layer=layer,
+                          tries=tries)
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return f"tuile {x},{y} échec ({exc})"
+
+    errors: list[str] = []
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for i, err in enumerate(pool.map(one, tiles), 1):
+            if err:
+                errors.append(err)
+            if on_progress:
+                on_progress(i, len(tiles))
+    return errors
 
 
 def save_tile_with_marker(

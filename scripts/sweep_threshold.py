@@ -17,8 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ultralytics import YOLO
 
-from detection_ortho.dataset import assemble_window, compose_rgn, parse_verdicts
-from detection_ortho.tiles import LAYER_IRC
+from detection_ortho.dataset import (
+    assemble_window, compose_rgn, parse_verdicts, prefetch_points,
+)
+from detection_ortho.tiles import LAYER, LAYER_IRC
 from detection_ortho.infer import result_to_boxes, boxes_to_points, max_score_near
 from detection_ortho.compare import sweep_precision_recall
 
@@ -41,18 +43,30 @@ def main() -> None:
     ap.add_argument("--zoom", type=int, default=19)
     ap.add_argument("--cache", type=Path, default=Path("tiles_cache/eval"))
     ap.add_argument("--device", type=str, default="cpu")
+    ap.add_argument("--layer", type=str, default=LAYER,
+                    help="couche WMTS à évaluer (défaut : ortho habituelle)")
+    ap.add_argument("--workers", type=int, default=12,
+                    help="téléchargements de tuiles en parallèle")
     args = ap.parse_args()
+    if args.nir and args.layer != LAYER:
+        ap.error("--nir et --layer sont incompatibles")
 
     verdicts = parse_verdicts(args.verdicts.read_text(encoding="utf-8").splitlines())
     print(f"{len(verdicts)} point(s), inférence à conf {args.conf_min} "
           f"({'[R,G,NIR]' if args.nir else 'RVB'})...")
 
+    layers = [args.layer] + ([LAYER_IRC] if args.nir else [])
+    errors = prefetch_points(verdicts, args.cache, layers, workers=args.workers,
+                             zoom=args.zoom, window_px=args.window)
+    print(f"Tuiles préchargées en parallèle ({len(layers)} couche(s)) : "
+          f"{len(errors)} en échec.", flush=True)
     model = YOLO(str(args.weights))
     scored: list = []
     for i, v in enumerate(verdicts, 1):
         lon, lat = v["lon"], v["lat"]
         try:
-            img, ogx, ogy = assemble_window(lon, lat, args.zoom, args.window, args.cache)
+            img, ogx, ogy = assemble_window(lon, lat, args.zoom, args.window,
+                                            args.cache, layer=args.layer)
             if args.nir:
                 irc, _, _ = assemble_window(lon, lat, args.zoom, args.window,
                                             args.cache, layer=LAYER_IRC)

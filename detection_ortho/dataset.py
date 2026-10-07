@@ -13,7 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from detection_ortho.tiles import lonlat_to_pixel, download_tile, LAYER
+from detection_ortho.tiles import lonlat_to_pixel, download_tile, prefetch_tiles, LAYER
 from detection_ortho.geo import haversine_m
 
 _M_PER_DEG_LAT = 111320.0
@@ -98,6 +98,33 @@ def window_tiles(
              for x in range(tx_min, tx_max + 1)
              for y in range(ty_min, ty_max + 1)]
     return tiles, origin_gx, origin_gy
+
+
+def tiles_for_points(points, zoom: int = 19, window_px: int = 640) -> set:
+    """Tuiles (x, y) nécessaires pour assembler une fenêtre centrée sur chaque point {lon, lat}."""
+    needed: set = set()
+    for p in points:
+        tiles, _, _ = window_tiles(p["lon"], p["lat"], zoom, window_px)
+        needed.update(tiles)
+    return needed
+
+
+def prefetch_points(
+    points, cache_dir, layers, workers: int = 12, zoom: int = 19,
+    window_px: int = 640,
+) -> list[str]:
+    """Précharge en parallèle les tuiles des fenêtres de tous les points, pour chaque couche."""
+    tiles = tiles_for_points(points, zoom, window_px)
+    errors: list[str] = []
+    for layer in layers:
+        errors += prefetch_tiles(tiles, cache_dir, layer=layer, zoom=zoom, workers=workers)
+    return errors
+
+
+def window_is_blank(image, min_frac: float = 0.05) -> bool:
+    """Vrai si moins de `min_frac` des pixels ne sont pas (quasi) blancs : pas de donnée à cet endroit."""
+    non_white = (image.min(axis=2) < 250).mean()
+    return float(non_white) < min_frac
 
 
 def assemble_window(

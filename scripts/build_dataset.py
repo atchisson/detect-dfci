@@ -16,7 +16,6 @@ import random
 import shutil
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -30,9 +29,9 @@ from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
     write_chip, split_indices, spatial_split_indices, write_data_yaml,
     window_tiles, fixed_box_geo, DEFAULT_BOX_M, parse_verdicts, compose_rgn,
-    dedup_verdicts, near_any,
+    dedup_verdicts, near_any, window_is_blank,
 )
-from detection_ortho.tiles import download_tile, LAYER_IRC
+from detection_ortho.tiles import LAYER, LAYER_IRC, layer_tag, prefetch_tiles, tile_cache_path
 
 
 def progress(iterable, total, label):
@@ -93,12 +92,18 @@ def main() -> None:
                     help="rayon (m) de l'écart autour des points --holdout")
     ap.add_argument("--nir", action="store_true",
                     help="imagettes [R,G,NIR] (bleu remplacé par le NIR de l'IRC)")
+    ap.add_argument("--layers", nargs="+", default=[LAYER], metavar="COUCHE",
+                    help="couches WMTS à rendre : chaque enregistrement donne une "
+                         "imagette par couche disponible (défaut : ortho habituelle)")
     ap.add_argument("--spatial-split", action="store_true",
                     help="split géographique par cellule (au lieu d'aléatoire)")
     ap.add_argument("--cell-deg", type=float, default=0.05,
                     help="taille de cellule du split spatial, en degrés")
     ap.add_argument("--out", type=Path, default=Path("dataset"))
     args = ap.parse_args()
+    args.layers = list(dict.fromkeys(args.layers))  # sans doublons, ordre gardé
+    if args.nir and list(args.layers) != [LAYER]:
+        ap.error("--nir est incompatible avec --layers")
 
     west, south, east, north = args.bbox
     cache = args.out / "tiles_cache"
@@ -167,35 +172,30 @@ def main() -> None:
         print(f"Holdout : {n_drop} enregistrement(s) écarté(s) à moins de "
               f"{args.holdout_m:g} m de {len(held)} point(s) mis de côté.")
 
-    # --- Récupération des images : pré-téléchargement parallèle des tuiles (dédupliquées) ---
+    # --- Récupération des images : préchargement parallèle des tuiles (dédupliquées), par couche ---
     needed = set()
     for _name, lon, lat, _bbox in records:
         tiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
         needed.update(tiles)
-    print(f"{len(needed)} tuile(s) ortho à récupérer (parallèle x{args.workers})...")
+
+    def _tile_progress(i, n):
+        if i % max(1, n // 50) == 0 or i == n:
+            print(f"  Récupération des tuiles: {i}/{n}", flush=True)
 
     # Session partagée = keep-alive (évite un handshake TCP/TLS par tuile).
     session = requests.Session()
-
-    def _download(xy):
-        x, y = xy
-        try:
-            download_tile(x, y, ZOOM, cache, session=session)
-            return None
-        except Exception as exc:  # noqa: BLE001
-            return f"tuile {x},{y} échec ({exc})"
-
-    errors = 0
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = [pool.submit(_download, xy) for xy in needed]
-        for fut in progress(as_completed(futures), len(futures),
-                            "Récupération des tuiles"):
-            err = fut.result()
-            if err:
-                errors += 1
-    if errors:
-        print(f"  {errors} tuile(s) en échec (réessayées à l'assemblage).",
-              file=sys.stderr)
+    for n_layer, layer in enumerate(list(args.layers) + ([LAYER_IRC] if args.nir else [])):
+        print(f"{len(needed)} tuile(s) à récupérer, couche {layer} "
+              f"(parallèle x{args.workers})...")
+        # Première couche : un 404 peut être passager, on réessaie. Couches
+        # suivantes : un 404 signifie « pas d'imagerie », une seule tentative.
+        errors = prefetch_tiles(needed, cache, layer=layer, zoom=ZOOM,
+                                workers=args.workers, session=session,
+                                on_progress=_tile_progress,
+                                tries=3 if n_layer == 0 else 1)
+        if errors:
+            print(f"  {len(errors)} tuile(s) en échec (réessayées à l'assemblage).",
+                  file=sys.stderr)
 
     # Repart d'un dataset propre (évite les orphelins d'un run précédent) ;
     # le cache de tuiles (dossier séparé) est préservé.
@@ -222,31 +222,57 @@ def main() -> None:
             where[i] = part
 
     qa_crops = []
+    written = {layer: 0 for layer in args.layers}
+    blank = {layer: 0 for layer in args.layers}
+    failed = {layer: 0 for layer in args.layers}
+    absent = {layer: 0 for layer in args.layers}
     for i, (name, lon, lat, bbox_geo) in enumerate(
         progress(records, len(records), "Génération des chips")
     ):
-        part = where[i]
-        try:
-            win_img, ogx, ogy = assemble_window(lon, lat, ZOOM, WINDOW, cache)
-            if args.nir:
-                irc_img, _, _ = assemble_window(
-                    lon, lat, ZOOM, WINDOW, cache, layer=LAYER_IRC)
-                win_img = compose_rgn(win_img, irc_img)
-        except Exception as exc:  # noqa: BLE001
-            print(f"  {name}: échec fenêtre ({exc})", file=sys.stderr)
-            continue
-        labels = []
-        if bbox_geo is not None:
-            px = geo_bbox_to_pixel_bbox(bbox_geo, ogx, ogy, ZOOM, WINDOW)
-            line = to_yolo_label(px, WINDOW)
-            if line:
-                labels.append(line)
-                if name.startswith("citerne") and len(qa_crops) < 48:
-                    x0, y0, x1, y1 = (int(v) for v in px)
-                    vis = win_img.copy()
-                    cv2.rectangle(vis, (x0, y0), (x1, y1), (0, 0, 255), 2)
-                    qa_crops.append(cv2.resize(vis, (128, 128)))
-        write_chip(win_img, labels, imgs / part, lbls / part, name)
+        part = where[i]  # un enregistrement = une seule partie, quelle que soit la couche
+        for k, layer in enumerate(args.layers):
+            if k == 0:
+                chip_name = name
+            else:
+                chip_name = f"{name}__{layer_tag(layer).lstrip('_') or 'standard'}"
+                # Tuile manquante après le préchargement = pas d'imagerie :
+                # fenêtre « absente », sans réseau ni nouvelle tentative.
+                wtiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
+                if any(not tile_cache_path(tx, ty, ZOOM, cache, layer).exists()
+                       for tx, ty in wtiles):
+                    absent[layer] += 1
+                    continue
+            try:
+                win_img, ogx, ogy = assemble_window(lon, lat, ZOOM, WINDOW, cache,
+                                                    layer=layer)
+                if args.nir:
+                    irc_img, _, _ = assemble_window(
+                        lon, lat, ZOOM, WINDOW, cache, layer=LAYER_IRC)
+                    win_img = compose_rgn(win_img, irc_img)
+            except Exception as exc:  # noqa: BLE001
+                failed[layer] += 1
+                print(f"  {chip_name}: échec fenêtre ({exc})", file=sys.stderr)
+                continue
+            if window_is_blank(win_img):
+                blank[layer] += 1
+                continue
+            labels = []
+            if bbox_geo is not None:
+                px = geo_bbox_to_pixel_bbox(bbox_geo, ogx, ogy, ZOOM, WINDOW)
+                line = to_yolo_label(px, WINDOW)
+                if line:
+                    labels.append(line)
+                    if k == 0 and name.startswith("citerne") and len(qa_crops) < 48:
+                        x0, y0, x1, y1 = (int(v) for v in px)
+                        vis = win_img.copy()
+                        cv2.rectangle(vis, (x0, y0), (x1, y1), (0, 0, 255), 2)
+                        qa_crops.append(cv2.resize(vis, (128, 128)))
+            write_chip(win_img, labels, imgs / part, lbls / part, chip_name)
+            written[layer] += 1
+    for layer in args.layers:
+        print(f"Couche {layer} : {written[layer]} imagette(s), "
+              f"{blank[layer]} fenêtre(s) vide(s), {absent[layer]} absente(s), "
+              f"{failed[layer]} échec(s).")
 
     write_data_yaml(args.out, args.out / "data.yaml")
 

@@ -191,14 +191,19 @@ def element_to_box(element: dict, default_box_m: float = DEFAULT_BOX_M) -> dict:
 def match_osm_polygons(
     points, elements, radius_m: float = 15.0,
     min_side_m: float = 3.0, max_side_m: float = 40.0,
+    tol_m: float = 3.0, min_short_side_m: float = 2.0,
 ) -> list:
     """Pour chaque point {lon, lat}, boîte géo (west, south, east, north) du polygone OSM le plus proche.
 
-    Seuls les éléments `way` ayant au moins 3 sommets sont candidats. Le polygone
-    retenu est celui dont le centre de boîte est le plus proche du point, à
-    `radius_m` au plus, et dont le plus grand côté mesure entre `min_side_m` et
-    `max_side_m` (sinon None : le point garde le carré fixe). Une entrée de
-    sortie par point, dans l'ordre.
+    Seuls les éléments `way` ayant au moins 3 sommets sont candidats, et
+    seulement si leur plus grand côté mesure entre `min_side_m` et `max_side_m`
+    et leur plus petit côté au moins `min_short_side_m` (un way quasi plat
+    donnerait une étiquette d'environ 1 px). Un candidat n'est éligible que si
+    le point se trouve à `tol_m` au plus de sa boîte (distance 0 à l'intérieur) :
+    le point doit être sur le polygone, pas à côté. Parmi les éligibles, on
+    garde celui dont le centre de boîte est le plus proche, à `radius_m` au plus
+    (sinon None : le point garde le carré fixe). Une entrée de sortie par
+    point, dans l'ordre.
     """
     cands = []
     for el in elements:
@@ -207,15 +212,21 @@ def match_osm_polygons(
             continue
         w, s, e, n = polygon_bounds(geom)
         lat_c = (s + n) / 2
-        side = max((e - w) * _M_PER_DEG_LAT * math.cos(math.radians(lat_c)),
-                   (n - s) * _M_PER_DEG_LAT)
-        if not (min_side_m <= side <= max_side_m):
+        sw = (e - w) * _M_PER_DEG_LAT * math.cos(math.radians(lat_c))
+        sh = (n - s) * _M_PER_DEG_LAT
+        if not (min_side_m <= max(sw, sh) <= max_side_m) or min(sw, sh) < min_short_side_m:
             continue
         cands.append(((w + e) / 2, lat_c, (w, s, e, n)))
     out = []
     for p in points:
         best, best_d = None, radius_m
         for lon_c, lat_c, box in cands:
+            w, s, e, n = box
+            dx = (max(w - p["lon"], 0.0, p["lon"] - e)
+                  * _M_PER_DEG_LAT * math.cos(math.radians(p["lat"])))
+            dy = max(s - p["lat"], 0.0, p["lat"] - n) * _M_PER_DEG_LAT
+            if math.hypot(dx, dy) > tol_m:
+                continue
             d = haversine_m(p["lon"], p["lat"], lon_c, lat_c)
             if d <= best_d:
                 best, best_d = box, d

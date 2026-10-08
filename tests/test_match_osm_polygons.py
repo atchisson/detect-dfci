@@ -58,6 +58,53 @@ def test_empty_inputs():
     assert match_osm_polygons([{"lon": LON, "lat": LAT}], []) == [None]
 
 
+def _east(m, lat=LAT):
+    """Décalage en longitude (degrés) équivalant à `m` mètres vers l'est."""
+    return m / (M * math.cos(math.radians(lat)))
+
+
+P = {"lon": LON, "lat": LAT}
+
+
+def test_polygon_not_under_the_point_is_rejected():
+    way = _rect_way(LON + _east(14), LAT, 13, 13)    # centre à 14 m, point ~7,5 m hors boîte
+    assert match_osm_polygons([P], [way]) == [None]
+
+
+def test_large_polygon_containing_the_point_off_centre_is_accepted():
+    way = _rect_way(LON + _east(12), LAT, 30, 30)    # point à 12 m du centre, dedans
+    assert match_osm_polygons([P], [way]) == [_bounds(way)]
+
+
+def test_tolerance_outside_the_box():
+    near = _rect_way(LON + _east(8), LAT, 12, 12)        # point 2 m hors boîte
+    far = _rect_way(LON + _east(10.9), LAT, 12, 12)      # point 4,9 m hors boîte
+    assert match_osm_polygons([P], [near]) == [_bounds(near)]
+    assert match_osm_polygons([P], [far]) == [None]
+
+
+def test_small_neighbour_does_not_inherit_when_big_one_is_filtered():
+    big = _rect_way(LON, LAT, 50, 50)                    # filtré (trop grand)
+    small = _rect_way(LON + _east(12), LAT, 4, 4)        # voisin, point hors de lui
+    assert match_osm_polygons([P], [big, small]) == [None]
+
+
+def test_flat_way_is_rejected():
+    flat = _rect_way(LON, LAT, 20, 0.2)
+    assert match_osm_polygons([P], [flat]) == [None]
+
+
+def test_tol_and_min_short_side_are_honoured():
+    far = _rect_way(LON + _east(10.9), LAT, 12, 12)
+    assert match_osm_polygons([P], [far], tol_m=5.0) == [_bounds(far)]
+    near = _rect_way(LON + _east(8), LAT, 12, 12)
+    assert match_osm_polygons([P], [near], tol_m=1.0) == [None]
+    flat = _rect_way(LON, LAT, 20, 0.2)
+    assert match_osm_polygons([P], [flat], min_short_side_m=0.1) == [_bounds(flat)]
+    thin = _rect_way(LON, LAT, 20, 3)
+    assert match_osm_polygons([P], [thin], min_short_side_m=4.0) == [None]
+
+
 def test_one_result_per_point_in_order():
     a = _rect_way(LON, LAT, 12, 12)
     pts = [{"lon": LON, "lat": LAT}, {"lon": LON + 0.01, "lat": LAT}]

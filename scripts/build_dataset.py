@@ -29,7 +29,7 @@ from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
     write_chip, split_indices, spatial_split_indices, write_data_yaml,
     window_tiles, fixed_box_geo, DEFAULT_BOX_M, parse_verdicts, compose_rgn,
-    dedup_verdicts, near_any, window_is_blank,
+    dedup_verdicts, near_any, window_is_blank, match_osm_polygons,
 )
 from detection_ortho.tiles import LAYER, LAYER_IRC, layer_tag, prefetch_tiles, tile_cache_path
 
@@ -60,6 +60,40 @@ def fetch_retry(selectors, w, s, e, n, tries=5, pause=6.0):
     raise last
 
 
+def attach_osm_boxes(verdicts, radius_m, margin=0.02):
+    """Ajoute `bbox_geo` aux verdicts `vrai` ayant un polygone OSM proche.
+
+    Une requête Overpass par appel (emprise des points « vrai » + marge) ;
+    aucune requête s'il n'y a pas de « vrai ». Retourne (polygones retenus, replis).
+    """
+    vrai = [v for v in verdicts if v["verdict"] == "vrai"]
+    if not vrai:
+        return 0, 0
+    west = min(v["lon"] for v in vrai) - margin
+    east = max(v["lon"] for v in vrai) + margin
+    south = min(v["lat"] for v in vrai) - margin
+    north = max(v["lat"] for v in vrai) + margin
+    elements = fetch_retry([("emergency", "water_tank")], west, south, east, north)
+    n_poly = 0
+    for v, box in zip(vrai, match_osm_polygons(vrai, elements, radius_m)):
+        if box is not None:
+            v["bbox_geo"] = box
+            n_poly += 1
+    return n_poly, len(vrai) - n_poly
+
+
+def write_montage(crops, path, cols=8):
+    """Écrit une mosaïque de vignettes 128x128 (rien si la liste est vide)."""
+    if not crops:
+        return
+    rows = (len(crops) + cols - 1) // cols
+    montage = np.full((rows * 128, cols * 128, 3), 50, np.uint8)
+    for i, c in enumerate(crops):
+        r, cc = divmod(i, cols)
+        montage[r * 128:(r + 1) * 128, cc * 128:(cc + 1) * 128] = c
+    cv2.imwrite(str(path), montage)
+
+
 def main() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -84,6 +118,10 @@ def main() -> None:
     ap.add_argument("--dedup-m", type=float, default=15.0,
                     help="rayon (m) sous lequel un vrai doublonne un positif "
                          "déjà présent et est écarté")
+    ap.add_argument("--osm-geom", action="store_true",
+                    help="boîte des vrais d'après le polygone OSM voisin (repli : carré fixe)")
+    ap.add_argument("--osm-geom-m", type=float, default=15.0,
+                    help="rayon (m) d'appariement d'un vrai à un polygone OSM")
     ap.add_argument("--holdout", type=Path, nargs="+", default=None,
                     help="CSV de verdicts mis de côté (test) : tout enregistrement "
                          "à moins de --holdout-m d'un de leurs points est écarté "
@@ -130,6 +168,7 @@ def main() -> None:
           f"(--max-pools={args.max_pools}).")
 
     records = []  # (name, lon, lat, bbox_geo|None)
+    poly_names = set()  # revpos dont la boîte vient d'un polygone OSM
     for i, b in enumerate(boxes):
         records.append((f"citerne_{i:04d}", b["lon"], b["lat"], b["bbox_geo"]))
     for i, p in enumerate(pools):
@@ -144,8 +183,14 @@ def main() -> None:
     # --- Chips issus de la revue (hard-negative mining) ---
     if args.verdicts:
         vs = []
+        n_poly = n_fallback = 0
         for path in args.verdicts:
-            vs += parse_verdicts(path.read_text(encoding="utf-8").splitlines())
+            file_vs = parse_verdicts(path.read_text(encoding="utf-8").splitlines())
+            if args.osm_geom:
+                n_p, n_f = attach_osm_boxes(file_vs, args.osm_geom_m)
+                n_poly += n_p
+                n_fallback += n_f
+            vs += file_vs
         vs, n_dup = dedup_verdicts(
             vs, [(b["lon"], b["lat"]) for b in boxes], args.dedup_m)
         n_hard = n_rev = 0
@@ -154,11 +199,17 @@ def main() -> None:
                 records.append((f"hardneg_{n_hard:04d}", v["lon"], v["lat"], None))
                 n_hard += 1
             else:  # vrai
-                bbox = fixed_box_geo(v["lon"], v["lat"], DEFAULT_BOX_M)
+                bbox = v.get("bbox_geo") or fixed_box_geo(v["lon"], v["lat"], DEFAULT_BOX_M)
+                if v.get("bbox_geo"):
+                    poly_names.add(f"revpos_{n_rev:04d}")
                 records.append((f"revpos_{n_rev:04d}", v["lon"], v["lat"], bbox))
                 n_rev += 1
         print(f"Verdicts ingérés : {n_hard} négatif(s) dur(s), {n_rev} positif(s), "
               f"{n_dup} doublon(s) écarté(s).")
+        if args.osm_geom:
+            print(f"Géométrie OSM (avant dédoublonnage et mise de côté) : "
+                  f"{n_poly} polygone(s) retenu(s), {n_fallback} repli(s) "
+                  f"sur le carré de {DEFAULT_BOX_M:g} m.")
 
     # --- Mise de côté : aucun enregistrement près des points de test ---
     if args.holdout:
@@ -222,6 +273,7 @@ def main() -> None:
             where[i] = part
 
     qa_crops = []
+    poly_crops = []
     written = {layer: 0 for layer in args.layers}
     blank = {layer: 0 for layer in args.layers}
     failed = {layer: 0 for layer in args.layers}
@@ -262,11 +314,17 @@ def main() -> None:
                 line = to_yolo_label(px, WINDOW)
                 if line:
                     labels.append(line)
-                    if k == 0 and name.startswith("citerne") and len(qa_crops) < 48:
-                        x0, y0, x1, y1 = (int(v) for v in px)
-                        vis = win_img.copy()
-                        cv2.rectangle(vis, (x0, y0), (x1, y1), (0, 0, 255), 2)
-                        qa_crops.append(cv2.resize(vis, (128, 128)))
+                    if k == 0:
+                        target = None
+                        if name.startswith("citerne") and len(qa_crops) < 48:
+                            target = qa_crops
+                        elif name in poly_names and len(poly_crops) < 48:
+                            target = poly_crops
+                        if target is not None:
+                            x0, y0, x1, y1 = (int(v) for v in px)
+                            vis = win_img.copy()
+                            cv2.rectangle(vis, (x0, y0), (x1, y1), (0, 0, 255), 2)
+                            target.append(cv2.resize(vis, (128, 128)))
             write_chip(win_img, labels, imgs / part, lbls / part, chip_name)
             written[layer] += 1
     for layer in args.layers:
@@ -277,14 +335,9 @@ def main() -> None:
     write_data_yaml(args.out, args.out / "data.yaml")
 
     # --- Mosaïque QA ---
-    if qa_crops:
-        cols = 8
-        rows = (len(qa_crops) + cols - 1) // cols
-        montage = np.full((rows * 128, cols * 128, 3), 50, np.uint8)
-        for i, c in enumerate(qa_crops):
-            r, cc = divmod(i, cols)
-            montage[r * 128:(r + 1) * 128, cc * 128:(cc + 1) * 128] = c
-        cv2.imwrite(str(args.out / "qa_positives.png"), montage)
+    write_montage(qa_crops, args.out / "qa_positives.png")
+    if args.osm_geom:
+        write_montage(poly_crops, args.out / "qa_polygones.png")
 
     print(f"\nDataset écrit dans {args.out} (data.yaml + images/labels).")
     print(f"QA positifs : {args.out / 'qa_positives.png'} — vérifiez et relancez "

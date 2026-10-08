@@ -432,8 +432,11 @@ n'apportent que leurs imagettes habituelles : les fenêtres sans imagerie 2026 s
 
 Par défaut, une vraie citerne issue des verdicts reçoit un carré fixe de 13 m. Dans le 36, un quart de
 ces carrés recouvre moins de la moitié du vrai contour (IoU < 0,5 avec le polygone OSM). `--osm-geom`
-dessine plutôt la boîte du polygone OSM voisin (à moins de `--osm-geom-m`, 15 m par défaut ; taille entre
-3 et 40 m ; repli sur le carré de 13 m sinon). Il fait une requête Overpass par fichier de verdicts.
+dessine plutôt la boîte du polygone OSM sur lequel tombe le point (le point doit être dans le contour, à 3 m près,
+et le centre du polygone à moins de `--osm-geom-m`, 15 m par défaut ; taille plausible entre
+3 et 40 m, petit côté d'au moins 2 m ; repli sur le carré de 13 m sinon). Il fait une requête Overpass par
+fichier de verdicts, et écrit la mosaïque de contrôle `qa_polygones.png` dans le dossier du dataset : ouvrez-la
+pour vérifier à l'œil les boîtes de polygones (en rouge) avant d'entraîner.
 
     Copy-Item -Recurse dataset_mr2026/tiles_cache dataset_mr2026_geom/tiles_cache
     python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 `

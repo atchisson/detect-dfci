@@ -38,6 +38,7 @@ def _label(out, stem):
 
 
 def _run(tmp_path, monkeypatch, osm_geom):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     calls = []
 
     def fake_fetch(selectors, w, s, e, n):
@@ -77,6 +78,44 @@ def test_osm_geom_uses_polygon_box_and_falls_back(tmp_path, monkeypatch, capsys)
     # une seule requête OSM supplémentaire (un fichier de verdicts) hors --bbox et piscines
     extra = [c for c in calls if c[0][0][0] == "emergency" and (c[1], c[2], c[3], c[4]) != (0.6, 47.3, 0.7, 47.4)]
     assert len(extra) == 1
+
+
+def test_qa_polygones_mosaic_only_with_osm_geom(tmp_path, monkeypatch):
+    out_on, _ = _run(tmp_path / "on", monkeypatch, osm_geom=True)
+    assert (out_on / "qa_polygones.png").exists()
+    out_off, _ = _run(tmp_path / "off", monkeypatch, osm_geom=False)
+    assert not (out_off / "qa_polygones.png").exists()
+
+
+def _run_radius(tmp_path, monkeypatch, extra):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    def fake_fetch(selectors, w, s, e, n):
+        if selectors[0][0] == "leisure" or (w, s, e, n) == (0.6, 47.3, 0.7, 47.4):
+            return []
+        # polygone 24 m x 8 m centré à 7 m à l'est du point (le point est dedans)
+        return [_way(A[0] + 7 / (M * math.cos(math.radians(A[1]))), A[1], 24, 8)]
+
+    monkeypatch.setattr(build_dataset, "fetch_features_geom", fake_fetch)
+    out = tmp_path / "ds"
+    _seed(out / "tiles_cache", *A)
+    verdicts = tmp_path / "v.csv"
+    verdicts.write_text("index,lat,lon,score,verdict\n"
+                        f"1,{A[1]},{A[0]},0.9,vrai\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [
+        "build_dataset.py", "--bbox", "0.6", "47.3", "0.7", "47.4", "--negatives", "0",
+        "--max-pools", "0", "--verdicts", str(verdicts), "--out", str(out),
+        "--osm-geom", *extra])
+    build_dataset.main()
+    return out
+
+
+def test_osm_geom_m_is_passed_through(tmp_path, monkeypatch):
+    out = _run_radius(tmp_path / "a", monkeypatch, [])
+    w, h = _label(out, "revpos_0000")
+    assert abs(w - 24 / 0.2026 / 640) < 0.02 and abs(h - 8 / 0.2026 / 640) < 0.02
+    out = _run_radius(tmp_path / "b", monkeypatch, ["--osm-geom-m", "5"])
+    w, h = _label(out, "revpos_0000")
+    assert abs(w - 13 / 0.2026 / 640) < 0.02 and abs(h - 13 / 0.2026 / 640) < 0.02
 
 
 def test_default_is_unchanged_without_osm_geom(tmp_path, monkeypatch):

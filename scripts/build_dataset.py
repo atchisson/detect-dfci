@@ -29,7 +29,7 @@ from detection_ortho.dataset import (
     element_to_box, assemble_window, geo_bbox_to_pixel_bbox, to_yolo_label,
     write_chip, split_indices, spatial_split_indices, write_data_yaml,
     window_tiles, fixed_box_geo, DEFAULT_BOX_M, parse_verdicts, compose_rgn,
-    dedup_verdicts, near_any, window_is_blank,
+    dedup_verdicts, near_any, window_is_blank, match_osm_polygons,
 )
 from detection_ortho.tiles import LAYER, LAYER_IRC, layer_tag, prefetch_tiles, tile_cache_path
 
@@ -60,6 +60,28 @@ def fetch_retry(selectors, w, s, e, n, tries=5, pause=6.0):
     raise last
 
 
+def attach_osm_boxes(verdicts, radius_m, margin=0.02):
+    """Ajoute `bbox_geo` aux verdicts `vrai` ayant un polygone OSM proche.
+
+    Une requête Overpass par appel (emprise des points « vrai » + marge) ;
+    aucune requête s'il n'y a pas de « vrai ». Retourne (polygones retenus, replis).
+    """
+    vrai = [v for v in verdicts if v["verdict"] == "vrai"]
+    if not vrai:
+        return 0, 0
+    west = min(v["lon"] for v in vrai) - margin
+    east = max(v["lon"] for v in vrai) + margin
+    south = min(v["lat"] for v in vrai) - margin
+    north = max(v["lat"] for v in vrai) + margin
+    elements = fetch_retry([("emergency", "water_tank")], west, south, east, north)
+    n_poly = 0
+    for v, box in zip(vrai, match_osm_polygons(vrai, elements, radius_m)):
+        if box is not None:
+            v["bbox_geo"] = box
+            n_poly += 1
+    return n_poly, len(vrai) - n_poly
+
+
 def main() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -84,6 +106,10 @@ def main() -> None:
     ap.add_argument("--dedup-m", type=float, default=15.0,
                     help="rayon (m) sous lequel un vrai doublonne un positif "
                          "déjà présent et est écarté")
+    ap.add_argument("--osm-geom", action="store_true",
+                    help="boîte des vrais d'après le polygone OSM voisin (repli : carré fixe)")
+    ap.add_argument("--osm-geom-m", type=float, default=15.0,
+                    help="rayon (m) d'appariement d'un vrai à un polygone OSM")
     ap.add_argument("--holdout", type=Path, nargs="+", default=None,
                     help="CSV de verdicts mis de côté (test) : tout enregistrement "
                          "à moins de --holdout-m d'un de leurs points est écarté "
@@ -144,8 +170,14 @@ def main() -> None:
     # --- Chips issus de la revue (hard-negative mining) ---
     if args.verdicts:
         vs = []
+        n_poly = n_fallback = 0
         for path in args.verdicts:
-            vs += parse_verdicts(path.read_text(encoding="utf-8").splitlines())
+            file_vs = parse_verdicts(path.read_text(encoding="utf-8").splitlines())
+            if args.osm_geom:
+                n_p, n_f = attach_osm_boxes(file_vs, args.osm_geom_m)
+                n_poly += n_p
+                n_fallback += n_f
+            vs += file_vs
         vs, n_dup = dedup_verdicts(
             vs, [(b["lon"], b["lat"]) for b in boxes], args.dedup_m)
         n_hard = n_rev = 0
@@ -154,11 +186,14 @@ def main() -> None:
                 records.append((f"hardneg_{n_hard:04d}", v["lon"], v["lat"], None))
                 n_hard += 1
             else:  # vrai
-                bbox = fixed_box_geo(v["lon"], v["lat"], DEFAULT_BOX_M)
+                bbox = v.get("bbox_geo") or fixed_box_geo(v["lon"], v["lat"], DEFAULT_BOX_M)
                 records.append((f"revpos_{n_rev:04d}", v["lon"], v["lat"], bbox))
                 n_rev += 1
         print(f"Verdicts ingérés : {n_hard} négatif(s) dur(s), {n_rev} positif(s), "
               f"{n_dup} doublon(s) écarté(s).")
+        if args.osm_geom:
+            print(f"Géométrie OSM : {n_poly} polygone(s) retenu(s), {n_fallback} repli(s) "
+                  f"sur le carré de {DEFAULT_BOX_M:g} m.")
 
     # --- Mise de côté : aucun enregistrement près des points de test ---
     if args.holdout:

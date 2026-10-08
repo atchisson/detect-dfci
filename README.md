@@ -427,3 +427,31 @@ n'apportent que leurs imagettes habituelles : les fenêtres sans imagerie 2026 s
    **Critère d'acceptation** (seuil 0,25) : sur le 36 en 2026, rappel ≥ 0,85 et précision ≥ 0,85 (avant :
    0,60 et 0,92) ; sur l'ortho habituelle, perte ≤ 0,03 de rappel et de précision (avant : 0,895 et 0,879
    au 36, 0,924 et 0,948 au 49). Sinon, ne pas remplacer `models/citernes-yolov8n.pt`.
+
+### Boîtes d'après les polygones OSM (recommandé avant un réentraînement)
+
+Par défaut, une vraie citerne issue des verdicts reçoit un carré fixe de 13 m. Dans le 36, un quart de
+ces carrés recouvre moins de la moitié du vrai contour (IoU < 0,5 avec le polygone OSM). `--osm-geom`
+dessine plutôt la boîte du polygone OSM voisin (à moins de `--osm-geom-m`, 15 m par défaut ; taille entre
+3 et 40 m ; repli sur le carré de 13 m sinon). Il fait une requête Overpass par fichier de verdicts.
+
+    Copy-Item -Recurse dataset_mr2026/tiles_cache dataset_mr2026_geom/tiles_cache
+    python scripts/build_dataset.py --bbox 0.05 46.72 1.06 47.72 `
+        --layers ORTHOIMAGERY.ORTHOPHOTOS ORTHOIMAGERY.ORTHOPHOTOS.RVB-EXPRESS.2026 `
+        --osm-geom `
+        --verdicts verdicts_maproulette/verdicts_18.csv `
+                   verdicts_maproulette/verdicts_28.csv `
+                   verdicts_maproulette/verdicts_37.csv `
+                   verdicts_maproulette/verdicts_41.csv `
+                   verdicts_maproulette/verdicts_44.csv `
+                   verdicts_maproulette/verdicts_45.csv `
+        --holdout verdicts_maproulette/verdicts_36.csv `
+                  verdicts_maproulette/verdicts_49.csv `
+        --spatial-split --out dataset_mr2026_geom
+
+La première commande réutilise les tuiles déjà téléchargées (rien à retélécharger). Le résumé
+« Géométrie OSM : N polygone(s) retenu(s), M repli(s) » indique la part de boîtes passées au contour réel.
+Pour entraîner, repartir des poids déjà adaptés à la 2026 (≈ 15 époques) :
+
+    python scripts/train.py --data dataset_mr2026_geom/data.yaml `
+        --model runs/citernes_2026/weights/best.pt --epochs 15 --device cpu --name citernes_2026_geom

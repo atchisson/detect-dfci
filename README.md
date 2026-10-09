@@ -470,3 +470,49 @@ Pour entraîner, repartir des poids déjà adaptés à la 2026 (≈ 15 époques)
 
     python scripts/train.py --data dataset_mr2026_geom/data.yaml `
         --model runs/citernes_2026/weights/best.pt --epochs 15 --device cpu --name citernes_2026_geom
+
+## Rattrapage des départements déjà traités (nouveau modèle, ortho 2026)
+
+Repasser les 8 départements déjà traités avec le modèle actuel. L'ortho express 2026 est utilisée là où
+elle existe (18, 28, 36, 37, 41, 45, certains couverts en partie) ; le 44 et le 49 n'en ont pas et restent
+sur l'ortho habituelle. Les tuiles sont **streamées en parallèle et purgées au fil de l'eau** : le cache disque
+reste plafonné par `--cache-gb` (10 Go par défaut) quelle que soit la couche, et il est vidé en fin de run.
+
+- `--layer` limite l'inférence aux zones couvertes par la couche : une sonde de tuiles (en mémoire, rien
+  n'est écrit sur le disque) écarte les fenêtres sans donnée, et les fenêtres encore blanches sont sautées.
+  Les fenêtres sans imagerie sur la couche sont sautées sans aucun appel réseau et comptées (« sans tuile »).
+- La couverture sondée est mémorisée dans `<dossier de sortie>/coverage.json` pendant le run, pour qu'une
+  reprise retrouve la même grille de fenêtres (supprimée avec `--restart` et à la fin d'un run terminé).
+- `--known-false` retire du challenge les candidats à moins de 25 m d'un point jugé « faux » dans vos
+  verdicts (ils sont listés dans `suppressed.geojson`). Les fichiers sont lus au démarrage. Vous pouvez en
+  ajouter d'autres (par exemple les faux du 37 revus à la main, absents des CSV MapRoulette).
+- Un run est **reprenable** : relancer la même commande (voir le runbook des passes départementales).
+
+Une fonction PowerShell évite de répéter les options (à coller une fois dans le terminal) :
+
+    function Rattrapage($nom, $insee, $couche = "") {
+        $a = @("scripts/infer_area.py", "--boundary", $nom, "--insee", $insee,
+               "--weights", "models/citernes-yolov8n.pt", "--conf", "0.25",
+               "--known-false", "verdicts_maproulette/verdicts_$insee.csv",
+               "--device", "cpu", "--out", "inference_rattrapage_$insee")
+        if ($couche) { $a += @("--layer", $couche) }
+        & .venv\Scripts\python @a
+    }
+    $L26 = "ORTHOIMAGERY.ORTHOPHOTOS.RVB-EXPRESS.2026"
+
+Puis, un département à la fois (de l'ordre de 15 à 19 h de CPU chacun, moins s'il est couvert en partie) :
+
+    Rattrapage "Cher" "18" $L26
+    Rattrapage "Eure-et-Loir" "28" $L26
+    Rattrapage "Indre" "36" $L26
+    Rattrapage "Indre-et-Loire" "37" $L26
+    Rattrapage "Loir-et-Cher" "41" $L26
+    Rattrapage "Loiret" "45" $L26
+    Rattrapage "Loire-Atlantique" "44"
+    Rattrapage "Maine-et-Loire" "49"
+
+Le challenge se filtre ensuite au seuil de qualité du modèle actuel : 0,35 pour les départements en
+ortho 2026, 0,60 pour le 44 et le 49 (ortho habituelle) :
+
+    python scripts/export_maproulette.py --input inference_rattrapage_18/detected_only.geojson `
+        --out inference_rattrapage_18/challenge_18.geojson --min-score 0.35

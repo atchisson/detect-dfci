@@ -29,9 +29,9 @@ from detection_ortho.osm import fetch_boundary_relations, fetch_citernes
 from detection_ortho.infer import (
     ways_to_polygon, windows_over_polygon, boxes_to_points, result_to_boxes,
 )
-from detection_ortho.dataset import assemble_window, window_tiles
+from detection_ortho.dataset import assemble_window, window_is_blank, window_tiles
 from detection_ortho.local_ortho import open_ortho, read_window
-from detection_ortho.tiles import download_tile
+from detection_ortho.tiles import LAYER, download_tile, tile_cache_path
 from detection_ortho import checkpoint
 from detection_ortho.tilecache import (
     DEFAULT_TILE_BYTES, max_tiles_for_budget, next_chunk, purge_cache,
@@ -41,6 +41,8 @@ from detection_ortho.compare import match_detections
 from detection_ortho.geojson_io import points_to_geojson, write_geojson
 from detection_ortho.maproulette import to_maproulette_tasks
 from detection_ortho.zones import apply_zone_filter
+from detection_ortho.coverage import filter_windows_by_coverage, probe_tile_count
+from detection_ortho.known_false import load_known_false, suppress_known_false
 
 
 def progress(iterable, total, label, min_interval=20.0, status=None, offset=0):
@@ -80,16 +82,42 @@ INSTRUCTION = ("Une citerne semble présente ici sur l'ortho IGN. "
                "Vérifiez et ajoutez-la à OSM si confirmé.")
 
 
-def download_ok(xy, cache, session):
-    """Télécharge une tuile ; retourne None si OK, l'exception sinon."""
+def download_ok(xy, cache, session, layer=LAYER):
+    """Télécharge une tuile ; retourne None si OK, l'exception sinon.
+
+    Couche standard : 3 essais (des 404 transitoires existent). Autre couche : un
+    seul essai, un 404 y signifie « pas de donnée » (zone non couverte).
+    """
     try:
-        download_tile(xy[0], xy[1], ZOOM, cache, session=session)
+        download_tile(xy[0], xy[1], ZOOM, cache, session=session, layer=layer,
+                      tries=3 if layer == LAYER else 1)
     except Exception as exc:  # noqa: BLE001
         return exc
     return None
 
 
-def stream_windows(centers, cache, budget_bytes, pool, session, start=0):
+def window_available(lon, lat, cache, layer) -> bool:
+    """Vrai si toutes les tuiles de la fenêtre sont dans le cache pour cette couche."""
+    tiles, _, _ = window_tiles(lon, lat, ZOOM, WINDOW)
+    return all(tile_cache_path(x, y, ZOOM, cache, layer).exists() for x, y in tiles)
+
+
+def _wait_downloads(futs, pool, cache, session, layer):
+    """Attend les téléchargements [(tuile, futur)] ; retourne le nombre d'échecs.
+
+    Couche non standard : un seul essai par tuile dans `download_ok`, donc on
+    relance UNE fois (en parallèle, sans pause) celles qui ont échoué, pour ne pas
+    perdre de fenêtres sur un 404 transitoire.
+    """
+    failed = [xy for xy, f in futs if f.result() is not None]
+    if failed and layer != LAYER:
+        retry = [(xy, pool.submit(download_ok, xy, cache, session, layer))
+                 for xy in failed]
+        failed = [xy for xy, f in retry if f.result() is not None]
+    return len(failed)
+
+
+def stream_windows(centers, cache, budget_bytes, pool, session, start=0, layer=LAYER):
     """Égrène les fenêtres en gardant le cache de tuiles sous `budget_bytes`.
 
     Découpe `centers` en tranches (cf. `tilecache`) : on attend les tuiles de la
@@ -103,15 +131,18 @@ def stream_windows(centers, cache, budget_bytes, pool, session, start=0):
     tile_bytes = DEFAULT_TILE_BYTES
     max_tiles = max_tiles_for_budget(budget_bytes, tile_bytes)
     chunk, tiles, i = next_chunk(centers, start, ZOOM, WINDOW, max_tiles)
-    futs = [pool.submit(download_ok, xy, cache, session) for xy in tiles]
+    futs = [(xy, pool.submit(download_ok, xy, cache, session, layer)) for xy in tiles]
     while chunk:
-        n_fail = sum(1 for f in futs if f.result() is not None)
-        if n_fail:
+        n_fail = _wait_downloads(futs, pool, cache, session, layer)
+        if n_fail and layer != LAYER:
+            print(f"  {n_fail} tuile(s) absente(s) ou en échec après deux essais "
+                  f"(fenêtres concernées sautées).", file=sys.stderr)
+        elif n_fail:
             print(f"  {n_fail} tuile(s) en échec (réessayées à l'assemblage).",
                   file=sys.stderr)
         # Tranche suivante lancée en fond pendant l'inférence de la courante.
         nxt, nxt_tiles, i = next_chunk(centers, i, ZOOM, WINDOW, max_tiles)
-        futs = [pool.submit(download_ok, xy, cache, session)
+        futs = [(xy, pool.submit(download_ok, xy, cache, session, layer))
                 for xy in nxt_tiles - tiles]
 
         yield from chunk
@@ -135,6 +166,20 @@ def fetch_retry(fn, *a, tries=5, pause=6.0, **kw):
             print(f"  Overpass retry {i + 1}/{tries} ({exc})", file=sys.stderr)
             time.sleep(pause)
     raise last
+
+
+def build_fingerprint(centers, args):
+    """Empreinte du point de reprise. La couche n'y figure que si elle n'est pas
+    la couche standard, pour ne pas invalider un point de reprise existant."""
+    params = {
+        "boundary": args.boundary, "conf": args.conf, "overlap": args.overlap,
+        "zoom": ZOOM, "window": WINDOW, "weights": Path(args.weights).name,
+        "ortho": args.ortho or "",
+        "insee": args.insee or "", "admin_level": args.admin_level or "",
+    }
+    if args.layer != LAYER:
+        params["layer"] = args.layer
+    return checkpoint.fingerprint(centers, params)
 
 
 def main() -> None:
@@ -180,7 +225,27 @@ def main() -> None:
     ap.add_argument("--refresh-zones", action="store_true",
                     help="retélécharger les fichiers ZIPTV/ZICAD au lieu de "
                          "relire le cache data/zones/")
+    ap.add_argument("--layer", type=str, default=LAYER,
+                    help="couche WMTS à inférer (défaut : ortho habituelle ; ex. "
+                         "ORTHOIMAGERY.ORTHOPHOTOS.RVB-EXPRESS.2026). Seules les "
+                         "zones couvertes par la couche sont inférées.")
+    ap.add_argument("--known-false", type=Path, nargs="+", default=None,
+                    help="CSV de verdicts : les candidats à moins de --known-false-m "
+                         "d'un point « faux » sont retirés du challenge "
+                         "(listés dans suppressed.geojson)")
+    ap.add_argument("--known-false-m", type=float, default=25.0,
+                    help="rayon (m) de suppression autour des faux déjà rejetés")
     args = ap.parse_args()
+    if args.layer != LAYER and args.ortho:
+        ap.error("--layer est incompatible avec --ortho (lecture locale)")
+    # Lus au démarrage : une faute de chemin doit échouer tout de suite.
+    try:
+        false_pts = load_known_false(args.known_false) if args.known_false else []
+    except FileNotFoundError as exc:
+        ap.error(f"--known-false : fichier introuvable : {exc.filename}")
+    if args.known_false:
+        print(f"Faux déjà rejetés : {len(false_pts)} point(s) « faux » lus dans "
+              f"{len(args.known_false)} fichier(s).")
 
     cache = args.out / "tiles_cache"
     session = requests.Session()
@@ -229,13 +294,26 @@ def main() -> None:
     else:
         print("Filtre des zones interdites désactivé (--no-skip-restricted-zones).")
 
+    if args.layer != LAYER:
+        n_avant = len(centers)
+        if args.restart:  # repartir de zéro : la grille se resonde aussi
+            (args.out / "coverage.json").unlink(missing_ok=True)
+        n_probes = probe_tile_count(centers)
+        centers, n_hors, n_inc = filter_windows_by_coverage(
+            centers, args.layer, workers=args.workers,
+            cache_path=args.out / "coverage.json")
+        if n_probes and n_inc == n_probes:
+            sys.exit(f"La sonde de couverture n'a obtenu aucune réponse de "
+                     f"{args.layer} : nom de couche erroné ou serveur indisponible.")
+        print(f"Couverture de {args.layer} : {n_hors} fenêtre(s) hors couverture "
+              f"écartée(s) sur {n_avant} ({n_inc} tuile(s) de sonde indéterminée(s), "
+              f"fenêtres conservées).")
+        if not centers:
+            sys.exit("Aucune fenêtre couverte par cette couche dans l'emprise : "
+                     "rien à inférer.")
+
     # --- A bis. Point de reprise ---
-    empreinte = checkpoint.fingerprint(centers, {
-        "boundary": args.boundary, "conf": args.conf, "overlap": args.overlap,
-        "zoom": ZOOM, "window": WINDOW, "weights": Path(args.weights).name,
-        "ortho": args.ortho or "",
-        "insee": args.insee or "", "admin_level": args.admin_level or "",
-    })
+    empreinte = build_fingerprint(centers, args)
     start = 0
     detections: list[dict] = []
     if args.restart:
@@ -275,7 +353,8 @@ def main() -> None:
         # Streaming : téléchargement par tranches + purge, cache disque borné.
         tile_pool = ThreadPoolExecutor(max_workers=args.workers)
         windows = stream_windows(centers, cache, args.cache_gb * 1e9,
-                                 tile_pool, session, start=start)
+                                 tile_pool, session, start=start,
+                                 layer=args.layer)
         print(f"WMTS en streaming : cache plafonné à {args.cache_gb:g} Go "
               f"(téléchargement par tranches x{args.workers}, purge au fil de "
               f"l'eau).")
@@ -288,7 +367,8 @@ def main() -> None:
         print(f"{len(needed)} tuile(s) à récupérer (parallèle x{args.workers})...")
 
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            futs = [pool.submit(download_ok, xy, cache, session) for xy in needed]
+            futs = [pool.submit(download_ok, xy, cache, session, args.layer)
+                    for xy in needed]
             n_fail = 0
             for fut in progress(as_completed(futs), len(futs),
                                 "Récupération des tuiles"):
@@ -306,6 +386,8 @@ def main() -> None:
     last_ckpt = last_flush
     done = start
     interrompu = False
+    n_vides = 0
+    n_sans_tuile = 0
     try:
         for lon, lat in progress(windows, len(centers), "Inférence", offset=start,
                                   status=lambda: f"{len(detections)} détection(s)"):
@@ -319,9 +401,17 @@ def main() -> None:
                 if ortho_vrt is not None:
                     img, ogx, ogy = read_window(ortho_vrt, lon, lat, ZOOM, WINDOW)
                 else:
-                    img, ogx, ogy = assemble_window(lon, lat, ZOOM, WINDOW, cache)
+                    if (args.layer != LAYER
+                            and not window_available(lon, lat, cache, args.layer)):
+                        n_sans_tuile += 1  # hors couverture : aucun appel réseau
+                        continue
+                    img, ogx, ogy = assemble_window(lon, lat, ZOOM, WINDOW, cache,
+                                                    layer=args.layer)
             except Exception as exc:  # noqa: BLE001
                 print(f"  fenêtre ({lon:.5f},{lat:.5f}) échec ({exc})", file=sys.stderr)
+                continue
+            if window_is_blank(img):  # aucune donnée ici : inutile d'inférer
+                n_vides += 1
                 continue
             res = model.predict(img, conf=args.conf, device=args.device, verbose=False)[0]
             boxes = result_to_boxes(res.boxes)
@@ -341,6 +431,10 @@ def main() -> None:
             ortho_vrt.close()
         if tile_pool is not None:
             tile_pool.shutdown(cancel_futures=True)
+    if n_vides:
+        print(f"Fenêtres sans donnée (blanches) sautées : {n_vides}.")
+    if n_sans_tuile:
+        print(f"Fenêtres sans tuile (hors couverture) sautées : {n_sans_tuile}.")
 
     if interrompu:
         checkpoint.save(args.out, empreinte, done, detections)
@@ -367,6 +461,13 @@ def main() -> None:
 
     # --- E. Comparaison ---
     res = match_detections(detections, osm, radius_m=args.radius)
+    suppressed: list = []
+    if args.known_false:
+        res["detected_only"], suppressed = suppress_known_false(
+            res["detected_only"], false_pts, args.known_false_m)
+        write_geojson(points_to_geojson(suppressed), args.out / "suppressed.geojson")
+        print(f"Faux déjà rejetés : {len(suppressed)} candidat(e)s écarté(e)s "
+              f"(à moins de {args.known_false_m:g} m d'un point « faux »).")
     write_geojson(points_to_geojson([m["detection"] for m in res["matched"]]),
                   args.out / "matched.geojson")
     write_geojson(points_to_geojson(res["detected_only"]),
@@ -415,10 +516,13 @@ def main() -> None:
     print(f"  Détections (après dédup)      : {len(detections)}")
     print(f"  Confirmées (∩ OSM)            : {n_match}")
     print(f"  Candidates (∉ OSM) -> MapRoul.: {len(res['detected_only'])}")
+    if args.known_false:
+        print(f"  Écartées (déjà rejetées)      : {len(suppressed)}")
     print(f"  Manquées (OSM non détectées)  : {len(res['osm_only'])}")
     if osm:
         print(f"  Rappel réel (∩OSM / OSM)      : {rappel:.0%}")
     checkpoint.clear(args.out)  # run terminé : plus rien à reprendre
+    (args.out / "coverage.json").unlink(missing_ok=True)
     print(f"\nLivrables dans {args.out}. "
           f"Chargez maproulette_challenge.geojson manuellement dans MapRoulette.")
 

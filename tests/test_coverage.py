@@ -4,7 +4,8 @@ import cv2
 import numpy as np
 
 from detection_ortho.coverage import (
-    PROBE_ZOOM, fetch_probe_tile, filter_windows_by_coverage, probe_tiles,
+    PROBE_ZOOM, fetch_probe_tile, filter_windows_by_coverage, probe_tile_count,
+    probe_tiles,
 )
 from detection_ortho.tiles import tile_for_lonlat
 
@@ -105,10 +106,21 @@ class _Session:
         return _Resp(self.status)
 
 
-def test_fetch_probe_tile_404_is_none_without_retry():
+def test_fetch_probe_tile_404_is_confirmed_once_before_returning_none():
     s = _Session(404)
     assert fetch_probe_tile(1, 2, 13, LAYER, session=s, pause=0) is None
-    assert s.calls == 1
+    assert s.calls == 2
+
+
+def test_fetch_probe_tile_transient_404_then_200_returns_the_content():
+    class Seq(_Session):
+        def get(self, url, headers=None, timeout=30):
+            self.calls += 1
+            return _Resp(404 if self.calls == 1 else 200)
+
+    s = Seq(200)
+    assert fetch_probe_tile(1, 2, 13, LAYER, session=s, pause=0) == b"x"
+    assert s.calls == 2
 
 
 def test_fetch_probe_tile_retries_then_raises_on_server_errors():
@@ -125,3 +137,82 @@ def test_fetch_probe_tile_retries_then_raises_on_server_errors():
 def test_fetch_probe_tile_returns_the_bytes_on_success():
     s = _Session(200)
     assert fetch_probe_tile(1, 2, 13, LAYER, session=s, pause=0) == b"x"
+
+
+# --- Persistance de la sonde (reprise déterministe) ---
+
+def _recording_fetch(answers):
+    calls = []
+
+    def fetch(x, y, zoom, layer):
+        calls.append((x, y))
+        return answers[(x, y)]
+
+    fetch.calls = calls
+    return fetch
+
+
+def _full_answers():
+    return {KEYS[0]: _jpeg(128), KEYS[1]: _jpeg(255), KEYS[2]: None, KEYS[3]: _jpeg(100)}
+
+
+def test_probe_cache_is_reused_without_new_requests(tmp_path):
+    path = tmp_path / "coverage.json"
+    first = _recording_fetch(_full_answers())
+    r1 = filter_windows_by_coverage(CENTERS, LAYER, fetch=first, cache_path=path)
+    assert len(first.calls) == 4
+
+    second = _recording_fetch({})
+    r2 = filter_windows_by_coverage(CENTERS, LAYER, fetch=second, cache_path=path)
+    assert r2 == r1 and second.calls == []
+
+
+def test_probe_cache_probes_only_missing_keys(tmp_path):
+    path = tmp_path / "coverage.json"
+    filter_windows_by_coverage(CENTERS[:2], LAYER, fetch=_recording_fetch(_full_answers()),
+                               cache_path=path)
+    second = _recording_fetch(_full_answers())
+    kept, dropped, unknown = filter_windows_by_coverage(CENTERS, LAYER, fetch=second,
+                                                        cache_path=path)
+    assert sorted(second.calls) == sorted(KEYS[2:])
+    assert kept == [CENTERS[0], CENTERS[3]] and dropped == 2 and unknown == 0
+
+
+def test_probe_cache_for_another_layer_is_ignored(tmp_path):
+    path = tmp_path / "coverage.json"
+    filter_windows_by_coverage(CENTERS, "AUTRE.COUCHE", fetch=_recording_fetch(_full_answers()),
+                               cache_path=path)
+    f = _recording_fetch(_full_answers())
+    filter_windows_by_coverage(CENTERS, LAYER, fetch=f, cache_path=path)
+    assert len(f.calls) == 4
+
+
+def test_probe_cache_file_format_and_parent_folder(tmp_path):
+    import json
+    path = tmp_path / "sub" / "dir" / "coverage.json"
+    filter_windows_by_coverage(CENTERS, LAYER, fetch=_recording_fetch(_full_answers()),
+                               cache_path=path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["layer"] == LAYER and data["zoom"] == PROBE_ZOOM
+    got = {(x, y): s for x, y, s in data["tiles"]}
+    assert got == {KEYS[0]: True, KEYS[1]: False, KEYS[2]: False, KEYS[3]: True}
+    assert list(path.parent.glob("*.tmp")) == []
+
+
+def test_probe_cache_stored_null_is_reused_as_is(tmp_path):
+    import json
+    path = tmp_path / "coverage.json"
+    path.write_text(json.dumps({"layer": LAYER, "zoom": PROBE_ZOOM,
+                                "tiles": [[x, y, None] for x, y in KEYS]}), encoding="utf-8")
+
+    f = _recording_fetch({})
+    kept, dropped, unknown = filter_windows_by_coverage(CENTERS, LAYER, fetch=f,
+                                                        cache_path=path)
+    assert f.calls == []
+    assert kept == CENTERS and dropped == 0 and unknown == 4
+
+
+def test_probe_tile_count():
+    assert probe_tile_count(CENTERS) == 4
+    assert probe_tile_count([(0.65, 47.33), (0.6501, 47.3301), (0.6502, 47.3302)]) == 1
+    assert probe_tile_count([]) == 0

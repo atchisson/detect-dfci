@@ -480,6 +480,9 @@ reste plafonné par `--cache-gb` (10 Go par défaut) quelle que soit la couche, 
 
 - `--layer` limite l'inférence aux zones couvertes par la couche : une sonde de tuiles (en mémoire, rien
   n'est écrit sur le disque) écarte les fenêtres sans donnée, et les fenêtres encore blanches sont sautées.
+  Les fenêtres sans imagerie sur la couche sont sautées sans aucun appel réseau et comptées (« sans tuile »).
+- La couverture sondée est mémorisée dans `<dossier de sortie>/coverage.json` pendant le run, pour qu'une
+  reprise retrouve la même grille de fenêtres (supprimée avec `--restart` et à la fin d'un run terminé).
 - `--known-false` retire du challenge les candidats à moins de 25 m d'un point jugé « faux » dans vos
   verdicts (ils sont listés dans `suppressed.geojson`). Les fichiers sont lus au démarrage. Vous pouvez en
   ajouter d'autres (par exemple les faux du 37 revus à la main, absents des CSV MapRoulette).

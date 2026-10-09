@@ -227,24 +227,28 @@ se lit en streaming via le WMTS.
    l'emprise OSM ont changé depuis : l'index de fenêtre ne voudrait plus rien
    dire. Le point de reprise est supprimé automatiquement à la fin du run.
 
-3. **Challenge MapRoulette** — filtrer au seuil de qualité (≥0.5 ≈ 97–99 % de
-   précision sur les départements 36 et 49 de test) plutôt que tout publier :
+3. **Challenge MapRoulette** — filtrer au seuil de qualité (≥0.60 ≈ 94–97 % de précision pour un
+   rappel de 0,90 à 0,95 sur les départements 36 et 49 de test) plutôt que tout publier :
 
        python scripts/export_maproulette.py \
            --input inferenceNN/detected_only.geojson \
-           --out inferenceNN/challenge_NN.geojson --min-score 0.5
+           --out inferenceNN/challenge_NN.geojson --min-score 0.6
 
    (Import manuel dans MapRoulette — aucun upload automatique.) Pour réviser à
    la main d'abord : `python scripts/make_map.py --dir inferenceNN`.
 
 > Le modèle (`models/citernes-yolov8n.pt`) a été affiné sur les verdicts
 > MapRoulette des départements 18, 28, 37, 41, 44 et 45 (36 et 49 mis de côté
-> pour le test) : sur ces deux départements, à rappel égal, 78 à 92 % de faux
-> positifs en moins qu'avant. Ses scores sont plus bas : utiliser `--conf 0.25`
-> (rappel ≈ 0,90 pour une précision de 0,88 à 0,95), pas 0.40. Il excelle sur la
-> **bâche souple turquoise** mais rate les types atypiques (grands bassins,
-> cuves rondes), absents des challenges revus. Pour le national, envisager un
-> ré-entraînement sur des exemples plus divers.
+> pour le test), avec des imagettes de l'ortho habituelle et de l'ortho express
+> 2026 et des boîtes d'après les polygones OSM. À rappel égal il fait nettement
+> moins de faux positifs que le modèle d'origine (78 à 92 % de moins au premier
+> affinage, encore moins depuis les boîtes OSM et l'ortho 2026 sur le 36). Ses
+> scores sont **plus élevés** qu'avant : `--conf 0.25` garde tous les candidats
+> utiles, puis on filtre à l'export (`--min-score 0.60` en ortho habituelle,
+> `0.35` en ortho 2026 : rappel ≈ 0,79 pour une précision ≈ 0,91 au 36). Il
+> excelle sur la **bâche souple turquoise** mais rate les types atypiques
+> (grands bassins, cuves rondes), absents des challenges revus. Pour le
+> national, envisager un ré-entraînement sur des exemples plus divers.
 
 ## Test de valeur NIR (proxy [R,G,NIR])
 
@@ -427,6 +431,14 @@ n'apportent que leurs imagettes habituelles : les fenêtres sans imagerie 2026 s
    **Critère d'acceptation** (seuil 0,25) : sur le 36 en 2026, rappel ≥ 0,85 et précision ≥ 0,85 (avant :
    0,60 et 0,92) ; sur l'ortho habituelle, perte ≤ 0,03 de rappel et de précision (avant : 0,895 et 0,879
    au 36, 0,924 et 0,948 au 49). Sinon, ne pas remplacer `models/citernes-yolov8n.pt`.
+
+   **Résultat (2026-10-09).** Le modèle `citernes_2026_geom` n'atteint pas strictement ce critère à
+   seuil fixe : en 2026 au seuil 0,25, rappel 0,815 pour une précision de 0,868. Il a pourtant été retenu :
+   à rappel égal il fait autant ou moins de faux positifs que les deux modèles précédents (36 standard :
+   15 contre 30 à rappel ≥ 0,93 ; 36 en 2026 : 4 contre 8 à rappel ≥ 0,64), et le plafond de rappel du 36
+   en 2026 passe de 0,82 à 0,89. Un critère à seuil fixe est trompeur quand les scores se décalent :
+   comparer à rappel égal. Ses scores étant plus élevés, les seuils conseillés montent (0,60 en ortho
+   habituelle, 0,35 en ortho 2026).
 
 ### Boîtes d'après les polygones OSM (recommandé avant un réentraînement)
 

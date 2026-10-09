@@ -516,3 +516,31 @@ ortho 2026, 0,60 pour le 44 et le 49 (ortho habituelle) :
 
     python scripts/export_maproulette.py --input inference_rattrapage_18/detected_only.geojson `
         --out inference_rattrapage_18/challenge_18.geojson --min-score 0.35
+
+### Un seul challenge pour tous les départements (run de plusieurs jours, week-end)
+
+`scripts/rattrapage.py` enchaîne `infer_area.py` sur les 8 départements déjà traités, un à la fois, puis
+fabrique **un seul** challenge. Ordre : les départements couverts par l'ortho 2026 (18, 28, 36, 37, 41, 45),
+puis le 44 et le 49 sur l'ortho habituelle. Chaque département écrit dans `inference_rattrapage/<insee>`, avec
+ses faux déjà rejetés (`verdicts_maproulette/verdicts_<insee>.csv`, vérifiés avant tout calcul).
+
+    .venv\Scripts\python scripts\rattrapage.py
+
+- **Durée** : de l'ordre de 15 à 19 h de CPU par département (extrapolé du 49, non mesuré sur la 2026) :
+  un week-end en traite 3 ou 4, le reste continue à la relance suivante.
+- **Reprise** : relancer la **même commande**. Un département terminé est sauté, un département en pause
+  reprend à son point de reprise.
+- **Pause** : Ctrl+C, ou déposer un fichier `STOP` dans le dossier du département en cours
+  (`New-Item inference_rattrapage\18\STOP -ItemType File`). Le script s'arrête sans enchaîner sur le
+  département suivant ; aucun travail n'est perdu.
+- **Échec** : un département en échec (panne réseau, erreur d'emprise) n'empêche pas les suivants ; il est
+  listé dans le bilan et le code de sortie vaut 1. Relancer reprend les départements non terminés.
+- **Un département à refaire de zéro** : supprimer son dossier `inference_rattrapage/<insee>`.
+- **Résultat** : `inference_rattrapage/challenge_rattrapage.geojson` (un seul fichier, chaque tâche porte son
+  département) et `recap_rattrapage.txt`. Seuils : 0,35 en ortho 2026, 0,60 en ortho habituelle ; les doublons
+  entre départements voisins (à moins de 10 m) sont fusionnés en gardant le meilleur score. Import manuel
+  dans MapRoulette.
+
+Options utiles : `--only 18 28` (quelques départements), `--dry-run` (afficher les commandes sans rien
+lancer), `--merge-only` (fusionner les départements déjà terminés sans rien relancer, par exemple pour
+publier un premier challenge en cours de route), `--min-score-2026` et `--min-score-standard`.

@@ -128,10 +128,17 @@ puis on assemble une VRT que l'inférence lit vite (~3 ms/fenêtre) :
 > reste utile pour reprojeter une **seule** dalle en un fichier unique.
 
 ### 2. (Optionnel) GPU : installer PyTorch CUDA pour la Quadro P620
-Par défaut le venv est en CPU. Pour utiliser la P620 :
+Par défaut le venv est en CPU. Le pilote doit être compatible avec la version CUDA de PyTorch :
+avec le pilote 516.40 de la P620 (CUDA 11.7 au plus), seules les versions **CUDA 11.8** conviennent
+(`cu121`, `cu126`… demandent un pilote plus récent, environ 525 ou plus) :
 
-    .venv\Scripts\python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+    .venv\Scripts\python -m pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118
     .venv\Scripts\python -c "import torch; print(torch.cuda.is_available())"   # True attendu
+
+Vérifié sur cette machine (Quadro P620, 2 Go) : le modèle donne exactement les mêmes détections sur GPU
+et sur CPU, en 23 ms par fenêtre au lieu de 80 ms (inférence seule). Le GPU ne sert qu'à l'inférence
+(2 Go, trop peu pour l'entraînement). Ajouter `--device 0` aux scripts d'inférence, y compris
+`scripts/rattrapage.py`.
 
 ### 3. Inférer sur le département (lecture locale, GPU)
 
@@ -490,11 +497,11 @@ reste plafonné par `--cache-gb` (10 Go par défaut) quelle que soit la couche, 
 
 Une fonction PowerShell évite de répéter les options (à coller une fois dans le terminal) :
 
-    function Rattrapage($nom, $insee, $couche = "") {
+    function Rattrapage($nom, $insee, $couche = "", $device = "cpu") {
         $a = @("scripts/infer_area.py", "--boundary", $nom, "--insee", $insee,
                "--weights", "models/citernes-yolov8n.pt", "--conf", "0.25",
                "--known-false", "verdicts_maproulette/verdicts_$insee.csv",
-               "--device", "cpu", "--out", "inference_rattrapage_$insee")
+               "--device", $device, "--out", "inference_rattrapage_$insee")
         if ($couche) { $a += @("--layer", $couche) }
         & .venv\Scripts\python @a
     }
@@ -528,6 +535,10 @@ ses faux déjà rejetés (`verdicts_maproulette/verdicts_<insee>.csv`, vérifié
 
 - **Durée** : de l'ordre de 15 à 19 h de CPU par département (extrapolé du 49, non mesuré sur la 2026) :
   un week-end en traite 3 ou 4, le reste continue à la relance suivante.
+- **GPU** : avec PyTorch CUDA (voir « 2. (Optionnel) GPU » plus haut), ajouter `--device 0` : l'inférence
+  passe de 80 ms à 23 ms par fenêtre (mesuré), soit un gain de l'ordre de ×2 attendu sur un département
+  entier (non mesuré : l'assemblage des fenêtres et les tuiles ne dépendent pas du GPU). Pour la fonction
+  `Rattrapage` ci-dessus, passer `0` en quatrième argument : `Rattrapage "Cher" "18" $L26 0`.
 - **Reprise** : relancer la **même commande**. Un département terminé est sauté, un département en pause
   reprend à son point de reprise.
 - **Pause** : Ctrl+C, ou déposer un fichier `STOP` dans le dossier du département en cours

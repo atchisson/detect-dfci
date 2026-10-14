@@ -75,10 +75,13 @@ var DATA = __DATA__;
 var ortho = L.tileLayer(
   "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg",
   {maxNativeZoom:19, maxZoom:21, attribution:"Ortho © IGN / Géoplateforme"});
+var ortho2026 = L.tileLayer(
+  "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS.RVB-EXPRESS.2026&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg",
+  {maxNativeZoom:19, maxZoom:21, attribution:"Ortho express 2026 © IGN / Géoplateforme"});
 var osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
   {maxZoom:19, attribution:"© OpenStreetMap"});
-var map = L.map("map", {layers:[ortho]}).setView([47.39, 0.68], 11);
-L.control.layers({"Ortho IGN":ortho, "OpenStreetMap":osm}).addTo(map);
+var map = L.map("map", {layers:[__BASE__]}).setView([47.39, 0.68], 11);
+L.control.layers({"Ortho IGN":ortho, "Ortho express 2026":ortho2026, "OpenStreetMap":osm}).addTo(map);
 
 function pkey(lat,lon){ return lat.toFixed(6)+","+lon.toFixed(6); }
 var verdicts = JSON.parse(localStorage.getItem("citerne_verdicts")||"{}");
@@ -191,6 +194,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", type=Path, default=Path("inference_out"))
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--base", choices=["standard", "2026"], default="standard",
+                    help="fond affiché à l'ouverture (l'autre reste dans le sélecteur)")
     args = ap.parse_args()
     out = args.out or (args.dir / "map.html")
 
@@ -204,7 +209,8 @@ def main() -> None:
                        "review": review, "features": fc.get("features", [])})
 
     data = json.dumps({"layers": layers}, ensure_ascii=False)
-    out.write_text(HTML.replace("__DATA__", data), encoding="utf-8")
+    out.write_text(HTML.replace("__BASE__", "ortho2026" if args.base == "2026" else "ortho")
+                              .replace("__DATA__", data), encoding="utf-8")
     n_review = sum(len(le["features"]) for le in layers if le["review"])
     print(f"Carte de revue écrite : {out} ({n_review} candidat(s) à revoir). "
           f"Ouvrez-la dans un navigateur.")

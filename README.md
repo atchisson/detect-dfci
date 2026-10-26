@@ -3,6 +3,15 @@
 Détection de citernes souples de secours sur l'ortho IGN, comparaison OSM,
 export MapRoulette. Voir `docs/superpowers/specs/`.
 
+## Avancement
+
+![Avancement de la détection par département](docs/avancement.png)
+
+8 départements sur 96 traités et repassés avec le modèle actuel (18, 28, 36, 37, 41, 44, 45, 49).
+Pour régénérer l'image après un nouveau rattrapage :
+
+    python scripts/carte_avancement.py --out docs/avancement.png
+
 ## Installation
 
     python -m venv .venv

@@ -19,3 +19,4 @@ BDORTHO_*/
 *_3857.tif
 verdicts*.csv
 data/zones/
+data/departements.geojson

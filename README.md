@@ -3,6 +3,10 @@
 Détection de citernes souples de secours sur l'ortho IGN, comparaison OSM,
 export MapRoulette. Voir `docs/superpowers/specs/`.
 
+Les candidats détectés sont revus dans le
+[projet MapRoulette « DECI »](https://maproulette.org/browse/projects/64996)
+(un challenge par département).
+
 ## Avancement
 
 ![Avancement de la détection par département](docs/avancement.png)

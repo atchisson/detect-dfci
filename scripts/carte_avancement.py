@@ -1,8 +1,10 @@
 """Carte d'avancement de la détection par département (image pour le README).
 
-Colore les départements déjà traités (et repassés avec le modèle actuel) et
-laisse les autres en gris. Les départements traités sont lus dans
-`inference_rattrapage/recap_rattrapage.txt` ; les contours sont téléchargés une
+Colore en vert les départements traités (sur MapRoulette, repassés avec le modèle
+actuel), en orange ceux dont l'inférence est terminée mais pas encore publiée, et
+laisse les autres en gris. Les traités sont lus dans
+`inference_rattrapage/recap_rattrapage.txt`, les inférés dans les dossiers
+`inference_<insee>_2026` / `_standard` ; les contours sont téléchargés une
 fois (GeoJSON simplifié) puis mis en cache dans `data/departements.geojson`.
 
 Usage:
@@ -29,7 +31,22 @@ UA = "https://github.com/atchisson/detect-dfci"
 # Ligne du récap : "  18 Cher   seuil 0.35 : 85 retenue(s) sur 136 candidate(s)"
 RECAP = re.compile(r"^\s*(\w+)\s+.+?seuil\s+([\d.]+)\s*:\s*(\d+) retenue")
 COULEUR_TRAITE = "#2e8b57"
+COULEUR_INFERE = "#f0a030"
 COULEUR_RESTE = "#dcdcdc"
+INFERENCE_DIR = re.compile(r"^inference_(\w+)_(2026|standard)$")
+
+
+def lire_inferes(racine: Path, publies: set[str]) -> set[str]:
+    """Départements dont toutes les passes `inference_<insee>_*` sont terminées
+    (détections écrites, plus de point de reprise) et qui ne sont pas encore
+    sur MapRoulette."""
+    passes: dict[str, list[bool]] = {}
+    for d in racine.iterdir():
+        m = INFERENCE_DIR.match(d.name)
+        if m and d.is_dir():
+            fini = (d / "detected_only.geojson").exists() and not (d / "checkpoint.json").exists()
+            passes.setdefault(m.group(1), []).append(fini)
+    return {insee for insee, p in passes.items() if all(p)} - publies
 
 
 def charger_contours(cache: Path) -> dict:
@@ -57,16 +74,17 @@ def anneaux(geom: dict):
         yield poly[0]
 
 
-def dessiner(contours: dict, taches: dict[str, int], out: Path) -> None:
+def dessiner(contours: dict, taches: dict[str, int], inferes: set[str], out: Path) -> None:
     fig, ax = plt.subplots(figsize=(8, 8))
     for f in contours["features"]:
         code = f["properties"]["code"]
         traite = code in taches
+        couleur = (COULEUR_TRAITE if traite else COULEUR_INFERE if code in inferes
+                   else COULEUR_RESTE)
         for anneau in anneaux(f["geometry"]):
-            ax.add_patch(MplPolygon(anneau, closed=True,
-                                    facecolor=COULEUR_TRAITE if traite else COULEUR_RESTE,
+            ax.add_patch(MplPolygon(anneau, closed=True, facecolor=couleur,
                                     edgecolor="white", linewidth=0.5))
-        if traite:
+        if traite or code in inferes:
             xs = [x for a in anneaux(f["geometry"]) for x, _ in a]
             ys = [y for a in anneaux(f["geometry"]) for _, y in a]
             ax.text((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2,
@@ -80,8 +98,11 @@ def dessiner(contours: dict, taches: dict[str, int], out: Path) -> None:
     ax.set_title("Détection de citernes DFCI — avancement par département", fontsize=13)
     ax.legend(handles=[
         Patch(color=COULEUR_TRAITE,
-              label=f"Traité, nouveau modèle ({len(taches)} dép.)"),
-        Patch(color=COULEUR_RESTE, label=f"Pas encore traité ({96 - len(taches)} dép. métropole)"),
+              label=f"Traité, sur MapRoulette ({len(taches)} dép.)"),
+        Patch(color=COULEUR_INFERE,
+              label=f"Inféré, revue MapRoulette à venir ({len(inferes)} dép.)"),
+        Patch(color=COULEUR_RESTE,
+              label=f"Pas encore traité ({96 - len(taches) - len(inferes)} dép. métropole)"),
     ], loc="lower left", frameon=False, fontsize=9)
     fig.savefig(out, dpi=130, bbox_inches="tight", facecolor="white")
 
@@ -90,6 +111,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--recap", default="inference_rattrapage/recap_rattrapage.txt")
     ap.add_argument("--contours", default="data/departements.geojson")
+    ap.add_argument("--racine", default=".", help="dossier contenant les inference_<insee>_*")
     ap.add_argument("--out", default="docs/avancement.png")
     a = ap.parse_args()
     taches = lire_recap(Path(a.recap))
@@ -97,8 +119,9 @@ def main() -> None:
         raise SystemExit(f"Aucun département lu dans {a.recap}")
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    dessiner(charger_contours(Path(a.contours)), taches, out)
-    print(f"{out} : {len(taches)} départements")
+    inferes = lire_inferes(Path(a.racine), set(taches))
+    dessiner(charger_contours(Path(a.contours)), taches, inferes, out)
+    print(f"{out} : {len(taches)} sur MapRoulette, {len(inferes)} inféré(s) : {sorted(inferes)}")
 
 
 if __name__ == "__main__":

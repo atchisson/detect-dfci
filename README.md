@@ -12,7 +12,7 @@ Les candidats détectés sont revus dans le
 ![Avancement de la détection par département](docs/avancement.png)
 
 8 départements sur 96 traités et repassés avec le modèle actuel (18, 28, 36, 37, 41, 44, 45, 49) ;
-2 autres (23, 87) sont inférés en double détection (ortho 2026 + ortho habituelle), leur revue
+4 autres (23, 35, 61, 87) sont inférés en double détection (ortho 2026 + ortho habituelle), leur revue
 MapRoulette est à venir. Pour régénérer l'image :
 
     python scripts/carte_avancement.py --out docs/avancement.png

@@ -11,6 +11,25 @@ from detection_ortho.dataset import lonlat_to_global_px, global_px_to_lonlat
 from detection_ortho.geo import haversine_m
 
 
+def _close_gaps(merged):
+    """Referme les contours ouverts (way manquant ou tronqué dans la réponse
+    Overpass) en reliant les extrémités libres par le plus court segment.
+
+    Sans cela `polygonize` ne garde que de petits polygones résiduels (ex. une
+    frontière départementale dont un way n'a pas de géométrie).
+    """
+    parts = list(getattr(merged, "geoms", [merged]))
+    libres = [pt for g in parts if not g.is_ring
+              for pt in (g.coords[0], g.coords[-1])]
+    ponts = []
+    while len(libres) >= 2:
+        a = libres.pop()
+        b = min(libres, key=lambda q: (q[0] - a[0]) ** 2 + (q[1] - a[1]) ** 2)
+        libres.remove(b)
+        ponts.append(LineString([a, b]))
+    return unary_union(parts + ponts) if ponts else merged
+
+
 def ways_to_polygon(ways: list[list[dict]]):
     """Assemble les ways (contours) en un polygone shapely (le plus grand)."""
     lines = [
@@ -18,7 +37,7 @@ def ways_to_polygon(ways: list[list[dict]]):
         for way in ways if len(way) >= 2
     ]
     merged = linemerge(unary_union(lines))
-    polys = list(polygonize(merged))
+    polys = list(polygonize(_close_gaps(merged)))
     if not polys:
         raise ValueError("Aucun polygone assemblable depuis les ways fournis.")
     return max(polys, key=lambda p: p.area)

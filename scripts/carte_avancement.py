@@ -3,7 +3,8 @@
 Colore en vert les départements traités (sur MapRoulette, repassés avec le modèle
 actuel), en orange ceux dont l'inférence est terminée mais pas encore publiée, et
 laisse les autres en gris. Les traités sont lus dans
-`inference_rattrapage/recap_rattrapage.txt`, les inférés dans les dossiers
+`inference_rattrapage/recap_rattrapage.txt` et `docs/termines.txt` (revue
+MapRoulette terminée hors rattrapage), les inférés dans les dossiers
 `inference_<insee>_2026` / `_standard` ; les contours sont téléchargés une
 fois (GeoJSON simplifié) puis mis en cache dans `data/departements.geojson`.
 
@@ -68,13 +69,21 @@ def lire_recap(path: Path) -> dict[str, int]:
     return out
 
 
+def lire_termines(path: Path) -> set[str]:
+    """Codes INSEE listés un par ligne (lignes vides et `#` ignorées)."""
+    if not path.exists():
+        return set()
+    return {l.split("#")[0].strip() for l in path.read_text(encoding="utf-8").splitlines()
+            if l.split("#")[0].strip()}
+
+
 def anneaux(geom: dict):
     polys = [geom["coordinates"]] if geom["type"] == "Polygon" else geom["coordinates"]
     for poly in polys:
         yield poly[0]
 
 
-def dessiner(contours: dict, taches: dict[str, int], inferes: set[str], out: Path) -> None:
+def dessiner(contours: dict, taches: set[str], inferes: set[str], out: Path) -> None:
     fig, ax = plt.subplots(figsize=(8, 8))
     for f in contours["features"]:
         code = f["properties"]["code"]
@@ -110,18 +119,21 @@ def dessiner(contours: dict, taches: dict[str, int], inferes: set[str], out: Pat
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--recap", default="inference_rattrapage/recap_rattrapage.txt")
+    ap.add_argument("--termines", default="docs/termines.txt",
+                    help="départements revus sur MapRoulette hors rattrapage")
     ap.add_argument("--contours", default="data/departements.geojson")
     ap.add_argument("--racine", default=".", help="dossier contenant les inference_<insee>_*")
     ap.add_argument("--out", default="docs/avancement.png")
     a = ap.parse_args()
-    taches = lire_recap(Path(a.recap))
-    if not taches:
+    recap = lire_recap(Path(a.recap))
+    if not recap:
         raise SystemExit(f"Aucun département lu dans {a.recap}")
+    taches = set(recap) | lire_termines(Path(a.termines))
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    inferes = lire_inferes(Path(a.racine), set(taches))
+    inferes = lire_inferes(Path(a.racine), taches)
     dessiner(charger_contours(Path(a.contours)), taches, inferes, out)
-    print(f"{out} : {len(taches)} sur MapRoulette, {len(inferes)} inféré(s) : {sorted(inferes)}")
+    print(f"{out} : {len(taches)} sur MapRoulette {sorted(taches)}, {len(inferes)} inféré(s) : {sorted(inferes)}")
 
 
 if __name__ == "__main__":

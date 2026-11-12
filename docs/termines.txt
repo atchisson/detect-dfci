@@ -1,0 +1,4 @@
+# Départements dont la revue MapRoulette est terminée, hors rattrapage
+# (ceux du rattrapage sont lus dans inference_rattrapage/recap_rattrapage.txt).
+# Un code INSEE par ligne ; lu par scripts/carte_avancement.py.
+25

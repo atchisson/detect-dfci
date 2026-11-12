@@ -11,9 +11,10 @@ Les candidats détectés sont revus dans le
 
 ![Avancement de la détection par département](docs/avancement.png)
 
-8 départements sur 96 traités et repassés avec le modèle actuel (18, 28, 36, 37, 41, 44, 45, 49) ;
-9 autres (14, 16, 23, 25, 35, 61, 69, 70, 87) sont inférés en double détection (ortho 2026 + ortho habituelle), leur revue
-MapRoulette est à venir. Pour régénérer l'image :
+9 départements sur 96 traités avec le modèle actuel et revus sur MapRoulette (18, 25, 28, 36, 37, 41, 44, 45, 49) ;
+15 autres (01, 07, 14, 16, 22, 23, 26, 35, 39, 61, 69, 70, 83, 87, 90) sont inférés en double détection (ortho 2026 +
+ortho habituelle), leur revue MapRoulette est à venir. Un département revu hors rattrapage s'ajoute dans
+`docs/termines.txt`. Pour régénérer l'image :
 
     python scripts/carte_avancement.py --out docs/avancement.png
 

@@ -11,8 +11,8 @@ Les candidats détectés sont revus dans le
 
 ![Avancement de la détection par département](docs/avancement.png)
 
-9 départements sur 96 traités avec le modèle actuel et revus sur MapRoulette (18, 25, 28, 36, 37, 41, 44, 45, 49) ;
-15 autres (01, 07, 14, 16, 22, 23, 26, 35, 39, 61, 69, 70, 83, 87, 90) sont inférés en double détection (ortho 2026 +
+10 départements sur 96 traités avec le modèle actuel et revus sur MapRoulette (18, 23, 25, 28, 36, 37, 41, 44, 45, 49) ;
+14 autres (01, 07, 14, 16, 22, 26, 35, 39, 61, 69, 70, 83, 87, 90) sont inférés en double détection (ortho 2026 +
 ortho habituelle), leur revue MapRoulette est à venir. Un département revu hors rattrapage s'ajoute dans
 `docs/termines.txt`. Pour régénérer l'image :
 

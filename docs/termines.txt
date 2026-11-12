@@ -2,3 +2,4 @@
 # (ceux du rattrapage sont lus dans inference_rattrapage/recap_rattrapage.txt).
 # Un code INSEE par ligne ; lu par scripts/carte_avancement.py.
 25
+23

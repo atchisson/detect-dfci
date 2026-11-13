@@ -3,3 +3,4 @@
 # Un code INSEE par ligne ; lu par scripts/carte_avancement.py.
 25
 23
+87
